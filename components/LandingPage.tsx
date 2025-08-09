@@ -561,7 +561,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick, onSignupClick }
                                         <div>
                                             <h4 className="font-semibold text-white">Email Us</h4>
                                             <p>Our support team is available 24/7 to answer your questions.</p>
-                                            <a href="mailto:support@basetitan.com" className="text-accent-primary hover:underline">support@basetitan.com</a>
+                                            <a href="mailto:finance.bittian.secure@gmail.com" className="text-accent-primary hover:underline">support@basetitan.com</a>
                                         </div>
                                     </div>
                                     <div className="flex items-start">
@@ -569,14 +569,14 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick, onSignupClick }
                                          <div>
                                             <h4 className="font-semibold text-white">Call Us</h4>
                                             <p>For urgent inquiries, feel free to give us a call.</p>
-                                            <a href="tel:+15551234567" className="text-accent-primary hover:underline">+1 (555) 123-4567</a>
+                                            <a href="tel:+15551234567" className="text-accent-primary hover:underline">+1 (201) 381-0806</a>
                                         </div>
                                     </div>
                                     <div className="flex items-start">
                                         <Icon className="w-6 h-6 mr-4 text-accent-primary flex-shrink-0 mt-1">{HOME_ICON}</Icon>
                                          <div>
                                             <h4 className="font-semibold text-white">Main Office</h4>
-                                            <p>123 Crypto Lane, Suite 100<br/>Metropolis, 12345, United States</p>
+                                            <p>500 Terry A Francois Blvd<br/>San Francisco, CA 94158 United States</p>
                                         </div>
                                     </div>
                                 </div>
