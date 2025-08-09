@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import { User, Transaction, ActiveInvestment, WithdrawalRequest, LiveChatSession, LiveChatMessage, ContactMessage, VerificationData, Notification, Page, DepositRequest } from '../../types';
 import { GERALD_USER, ADMIN_USER, generateNewUser, generateDefaultAccount } from '../../constants';
@@ -82,42 +83,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [error, setError] = useState<string | null>(null);
     const hasHydrated = useRef(false);
 
-    // Initial data hydration from jsonbin.io
+    // Initial data hydration from our secure API endpoint
     useEffect(() => {
-        const JSONBIN_API_KEY = process.env.JSONBIN_API_KEY;
-        const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
-
-        if (!JSONBIN_API_KEY || !JSONBIN_BIN_ID) {
-            console.warn("JSONBin API Key or Bin ID not configured. App will run in-memory only.");
-            setIsLoading(false);
-            hasHydrated.current = true; // Mark as "hydrated" to enable persistence for the session
-            return;
-        }
-
         const fetchData = async () => {
             setIsLoading(true);
             setError(null);
             try {
-                const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
-                    method: 'GET',
-                    headers: {
-                        'X-Master-Key': JSONBIN_API_KEY,
-                    },
-                });
+                const response = await fetch('/api/get-state');
 
-                if (response.status === 404) {
-                    console.log("Bin not found. It will be created on the first state change.");
+                if (response.status === 404 || response.status === 500) { // Handle "bin not found" or config errors
+                     console.log("Remote bin not found or server misconfigured. Using local default state.");
                 } else if (!response.ok) {
                     throw new Error(`Failed to fetch data: ${response.statusText}`);
                 } else {
                     const data = await response.json();
-                    if (data.record && data.record.allUsers && Array.isArray(data.record.allUsers)) {
-                        console.log("Hydrating state from JSONBin...");
-                        setAllUsers(data.record.allUsers);
-                        setWithdrawalRequests(data.record.withdrawalRequests || []);
-                        setDepositRequests(data.record.depositRequests || []);
-                        setLiveChatSessions(data.record.liveChatSessions || []);
-                        setContactMessages(data.record.contactMessages || []);
+                    if (data && data.allUsers && Array.isArray(data.allUsers)) {
+                        console.log("Hydrating state from remote...");
+                        setAllUsers(data.allUsers);
+                        setWithdrawalRequests(data.withdrawalRequests || []);
+                        setDepositRequests(data.depositRequests || []);
+                        setLiveChatSessions(data.liveChatSessions || []);
+                        setContactMessages(data.contactMessages || []);
                     } else {
                         console.log("Bin is empty or has incorrect format. It will be overwritten on the first state change.");
                     }
@@ -127,28 +113,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setError("Could not load saved data. Using default session.");
             } finally {
                 setIsLoading(false);
-                hasHydrated.current = true; // Mark hydration as complete
+                hasHydrated.current = true;
             }
         };
 
         fetchData();
     }, []);
 
-    // Debounced effect to persist state changes
+    // Debounced effect to persist state changes to our secure API endpoint
     useEffect(() => {
-        if (!hasHydrated.current) {
-            return; // Do not persist until initial data is loaded
+        if (!hasHydrated.current || isLoading) {
+            return;
         }
         
-        const JSONBIN_API_KEY = process.env.JSONBIN_API_KEY;
-        const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID;
-
-        if (!JSONBIN_API_KEY || !JSONBIN_BIN_ID) {
-            return; // Don't do anything if not configured
-        }
-
         const handler = setTimeout(() => {
-            console.log("Persisting state to JSONBin...");
+            console.log("Persisting state via API...");
             const stateToPersist = {
                 allUsers,
                 withdrawalRequests,
@@ -157,11 +136,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 contactMessages,
             };
 
-            fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+            fetch('/api/save-state', {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Master-Key': JSONBIN_API_KEY,
                 },
                 body: JSON.stringify(stateToPersist),
             }).then(response => {
@@ -174,12 +152,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 console.error("Error persisting state:", err);
             });
 
-        }, 1500); // Debounce for 1.5 seconds
+        }, 1500);
 
         return () => {
             clearTimeout(handler);
         };
-    }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages]);
+    }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, isLoading]);
 
     const currentUser = useMemo(() => {
         if (currentUserId === null) return null;
@@ -187,12 +165,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, [allUsers, currentUserId]);
 
     const navigateTo = useCallback((targetPage: Page) => {
-        if (activePage === targetPage) return; // Do nothing if already on the page
+        if (activePage === targetPage) return;
 
         if (activePage === Page.Trade) {
             setTimeout(() => {
                 setActivePage(targetPage);
-            }, 250); // Increased delay for robust widget cleanup
+            }, 250);
         } else {
             setActivePage(targetPage);
         }
@@ -218,7 +196,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
             
             setCurrentUserId(foundUser.id);
-            setActivePage(Page.Dashboard); // Reset to dashboard on login
+            setActivePage(Page.Dashboard);
             setWasJustLoggedIn(true);
             return { success: true };
         }
@@ -260,7 +238,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (!response.ok) {
                 const errorData = await response.json();
                 console.error("Failed to send verification email:", errorData);
-                // Even if email fails, account is created. Could add rollback logic here.
                 return { success: false, error: "Could not send verification email. Please contact support."};
             }
         } catch (error) {
@@ -268,7 +245,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
              return { success: false, error: "Could not send verification email. Please contact support."};
         }
 
-        // Do not log user in
         return { success: true };
     };
 
@@ -278,13 +254,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setAllUsers(prevUsers => updateUserInState(prevUsers, userToVerify.id, u => ({
                 ...u,
                 isEmailVerified: true,
-                emailVerificationToken: '', // Clear the token after use
+                emailVerificationToken: '',
             })));
             return { success: true };
         }
         return { success: false };
     };
-
 
     const createDefaultAccount = (details: { fullName: string; name: string; email: string; phone: string; dateOfBirth: string; password?: string; avatarUrl: string; address?: string; }): boolean => {
          if (allUsers.some(u => u.email.toLowerCase() === details.email.toLowerCase() || u.name.toLowerCase() === details.name.toLowerCase())) {
@@ -535,7 +510,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setDepositRequests(prev => [newRequest, ...prev]);
         
         addTransaction(request.userId, {
-            id: newRequest.id, // Use same ID for easier lookup
+            id: newRequest.id,
             type: 'Deposit',
             asset: request.asset,
             amount: request.amount,

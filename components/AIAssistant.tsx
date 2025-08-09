@@ -38,15 +38,20 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ onClose }) => {
         setIsLoading(true);
     
         const aiMessageId = Date.now() + 1;
-        // Add a placeholder for the AI response
         setMessages(prev => [...prev, { id: aiMessageId, text: '', sender: 'ai' }]);
     
         try {
             const stream = await sendMessageStream(input);
-            
+            const reader = stream.getReader();
+            const decoder = new TextDecoder();
             let accumulatedText = '';
-            for await (const chunk of stream) {
-                accumulatedText += chunk.text;
+
+            while(true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+                accumulatedText += decoder.decode(value, { stream: true });
                 setMessages(prev =>
                     prev.map(msg =>
                         msg.id === aiMessageId ? { ...msg, text: accumulatedText } : msg
