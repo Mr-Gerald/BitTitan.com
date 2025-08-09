@@ -39,6 +39,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
     
     // Signup-specific state
     const [fullName, setFullName] = useState('');
@@ -67,51 +68,57 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
         setConfirmPassword('');
         setTermsAccepted(false);
         setError('');
+        setIsLoading(false);
     }
 
-    const handleLogin = async () => {
-        const result = auth?.login(username, password);
-        if (!result?.success) {
-            if (result?.error === 'email_not_verified') {
-                setError('Please verify your email before logging in.');
-            } else {
-                setError('Invalid username or password.');
-            }
-        }
-        // On success, the modal will be closed by the App component's useEffect
-    };
-
-    const handleSignup = async () => {
-        if (!fullName || !username || !email || !password || !country || !dateOfBirth || !phone) {
-            setError('All fields are required.');
-            return;
-        }
-        if (password !== confirmPassword) {
-            setError('Passwords do not match.');
-            return;
-        }
-         if (!termsAccepted) {
-            setError('You must accept the terms and conditions.');
-            return;
-        }
-        if (auth?.signup) {
-            const result = await auth.signup(fullName, username, email, password, country, dateOfBirth, phone);
-            if(result.success) {
-                setSignupSuccess(true);
-            } else {
-                setError(result.error || 'An unexpected error occurred.');
-            }
-        }
-    };
-
-
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isLoading) return;
         setError('');
-        if (isLoginView) {
-           handleLogin();
-        } else {
-           handleSignup();
+        setIsLoading(true);
+
+        try {
+            if (isLoginView) {
+                const result = auth?.login(username, password);
+                if (!result?.success) {
+                    setError(result?.error || 'Invalid username or password.');
+                }
+                // On success, the App component handles modal closure.
+            } else {
+                // Signup logic
+                if (!fullName || !username || !email || !password || !country || !dateOfBirth || !phone) {
+                    setError('All fields are required.');
+                    return;
+                }
+                if (password !== confirmPassword) {
+                    setError('Passwords do not match.');
+                    return;
+                }
+                if (!termsAccepted) {
+                    setError('You must accept the terms and conditions.');
+                    return;
+                }
+
+                if (auth?.signup) {
+                    const result = await auth.signup(fullName, username, email, password, country, dateOfBirth, phone);
+                    if (result.success) {
+                        setSignupSuccess(true);
+                        // isLoading remains true to keep button disabled while we show success screen
+                        return; 
+                    } else {
+                        setError(result.error || 'An unexpected error occurred.');
+                    }
+                }
+            }
+        } catch (err: any) {
+            console.error("Form submission error:", err);
+            setError("A network error occurred. Please check your connection.");
+        } finally {
+             // Only stop loading if signup was not successful.
+             // If it was successful, the component will unmount or change view.
+            if (!signupSuccess) {
+                 setIsLoading(false);
+            }
         }
     };
 
@@ -216,9 +223,16 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
                 {error && <p className="text-sm text-accent-danger text-center">{error}</p>}
                 <div>
                     <button type="submit"
-                        disabled={!isLoginView && !termsAccepted}
+                        disabled={(!isLoginView && !termsAccepted) || isLoading}
                         className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-basetitan-light focus:ring-accent-primary disabled:bg-gray-500 disabled:cursor-not-allowed">
-                        {isLoginView ? 'Sign In' : 'Sign Up'}
+                        {isLoading ? (
+                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : (
+                            isLoginView ? 'Sign In' : 'Sign Up'
+                        )}
                     </button>
                 </div>
             </form>
