@@ -1,0 +1,8 @@
+{
+  "name": "Copy of BitTitan - Bitcoin Investment & Trading",
+  "description": "A high-trust, intelligent BTC investment & trading platform that blends live trading, automated investing, user behavioral psychology, social proof, AI, and gamified earning features.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "prompt": ""
+}
