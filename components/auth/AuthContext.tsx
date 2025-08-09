@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import { User, Transaction, ActiveInvestment, WithdrawalRequest, LiveChatSession, LiveChatMessage, ContactMessage, VerificationData, Notification, Page, DepositRequest } from '../../types';
 import { GERALD_USER, ADMIN_USER, generateNewUser, generateDefaultAccount } from '../../constants';
@@ -180,7 +181,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const foundUser = allUsers.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === pass);
         if (foundUser) {
             if (!foundUser.isEmailVerified) {
-                return { success: false, error: "email_not_verified" };
+                return { success: false, error: "Please verify your email before logging in." };
             }
 
             const today = getTodayDateString();
@@ -200,7 +201,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setWasJustLoggedIn(true);
             return { success: true };
         }
-        return { success: false, error: "invalid_credentials" };
+        return { success: false, error: "Invalid username or password." };
     };
 
     const checkAndResetLoginFlag = useCallback(() => {
@@ -221,7 +222,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         const newUser = generateNewUser(allUsers.length + 1, fullName, name, email, country, dateOfBirth, phone, pass);
-        setAllUsers(prev => [...prev, newUser]);
         
         try {
             const verificationLink = `${window.location.origin}?verifyToken=${newUser.emailVerificationToken}`;
@@ -236,13 +236,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             });
 
             if (!response.ok) {
-                const errorData = await response.json();
-                console.error("Failed to send verification email:", errorData);
-                return { success: false, error: "Could not send verification email. Please contact support."};
+                let errorMessage = "An unexpected error occurred. Please contact support.";
+                 try {
+                    // Try to parse a specific error message from the API response
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorData.message || JSON.stringify(errorData);
+                } catch (e) {
+                    // If the response isn't JSON, it might be plain text or an HTML error page.
+                    const textError = await response.text();
+                    // Avoid showing a whole HTML page as an error.
+                    errorMessage = textError.length > 300 ? "The server returned an unexpected error." : textError;
+                }
+                console.error("Failed to send verification email. Server response:", errorMessage);
+                // Return a user-friendly but detailed error
+                return { success: false, error: `Could not send verification email. Reason: ${errorMessage}` };
             }
-        } catch (error) {
-             console.error("Error calling email API:", error);
-             return { success: false, error: "Could not send verification email. Please contact support."};
+    
+            // IMPORTANT: Only add the user to state *after* the email was successfully sent.
+            setAllUsers(prev => [...prev, newUser]);
+
+        } catch (error: any) {
+             console.error("Network error calling email API:", error);
+             return { success: false, error: "A network error occurred. Please check your connection and try again."};
         }
 
         return { success: true };

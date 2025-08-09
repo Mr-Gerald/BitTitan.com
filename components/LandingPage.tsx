@@ -561,7 +561,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLoginClick, onSignupClick }
                                         <div>
                                             <h4 className="font-semibold text-white">Email Us</h4>
                                             <p>Our support team is available 24/7 to answer your questions.</p>
-                                            <a href="mailto:finance.bittian.secure@gmail.com" className="text-accent-primary hover:underline">support@basetitan.com</a>
+                                            <a href="mailto:finance.bittian.secure@gmail.com" className="text-accent-primary hover:underline">finance.bittian.secure@gmail.com</a>
                                         </div>
                                     </div>
                                     <div className="flex items-start">
