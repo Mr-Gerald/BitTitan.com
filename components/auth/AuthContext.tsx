@@ -1,4 +1,5 @@
 
+
 import React, { createContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import { User, Transaction, ActiveInvestment, WithdrawalRequest, LiveChatSession, LiveChatMessage, ContactMessage, VerificationData, Notification, Page, DepositRequest } from '../../types';
 import { GERALD_USER, ADMIN_USER, generateNewUser, generateDefaultAccount } from '../../constants';
@@ -84,20 +85,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
     const [activePage, setActivePage] = useState<Page>(Page.Dashboard);
     const [isLoading, setIsLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const hasHydrated = useRef(false);
     
-    // Create a ref to hold the latest state. This solves stale closure problems in the save function.
+    // Refs for state management to prevent race conditions and stale closures
+    const hasHydrated = useRef(false);
+    const isSavingRef = useRef(false); // The new, robust lock
     const stateRef = useRef({ allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages });
+    const debouncedSaveRef = useRef<number | null>(null);
 
     // Keep the state ref up-to-date with any changes.
     useEffect(() => {
         stateRef.current = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
     }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages]);
 
-    const debouncedSaveRef = useRef<number | null>(null);
-    
     // A robust, unified save function. Critical actions can call it with `immediate = true`.
     const triggerSave = useCallback((immediate = false) => {
         if (debouncedSaveRef.current) {
@@ -107,7 +107,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const saveAction = () => {
             if (!hasHydrated.current) return;
             
-            if (immediate) setIsSaving(true);
+            if (immediate) {
+                isSavingRef.current = true; // Engage the lock
+            }
             console.log(`Persisting state via API (${immediate ? 'immediate' : 'debounced'})...`);
 
             // Use the ref to get the guaranteed latest state.
@@ -122,7 +124,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 else console.log("State persisted successfully.");
             }).catch(err => console.error("Error persisting state:", err))
             .finally(() => {
-                if(immediate) setIsSaving(false);
+                if(immediate) {
+                    isSavingRef.current = false; // Release the lock
+                }
             });
         };
         
@@ -173,7 +177,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, []);
     
     const refreshStateFromServer = useCallback(async () => {
-        if (isSaving || !hasHydrated.current) return;
+        if (isSavingRef.current || !hasHydrated.current) return; // Check the lock
         try {
             const response = await fetch('/api/get-state');
             if (response.ok) {
@@ -189,7 +193,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } catch (err) {
             console.error("Error during state refresh:", err);
         }
-    }, [isSaving]);
+    }, []);
 
     const currentUser = useMemo(() => {
         if (currentUserId === null) return null;
