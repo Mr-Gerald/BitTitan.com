@@ -190,7 +190,7 @@ const Wallet: React.FC = () => {
                                 <div className="space-y-4">
                                     <h3 className="text-lg font-bold text-white">Fund Your Account</h3>
                                     <p className="text-sm text-basetitan-text-secondary">Add funds to your balance using approved methods.</p>
-                                     <button onClick={() => setInfoModal({ isOpen: true, title: 'Bank Transfer Instructions', message: 'Please contact <b class="text-white">finance.bititan.secure@gmail.com</b> for bank transfer instructions.'})} className="w-full text-left flex items-center p-3 bg-basetitan-dark hover:bg-basetitan-border rounded-md">
+                                     <button onClick={() => setInfoModal({ isOpen: true, title: 'Bank Transfer Instructions', message: 'Please contact <b class="text-white">finance.bittian.secure@gmail.com</b> for bank transfer instructions.'})} className="w-full text-left flex items-center p-3 bg-basetitan-dark hover:bg-basetitan-border rounded-md">
                                         Bank Transfer
                                     </button>
                                     <button onClick={() => setActiveTab('deposit')} className="w-full text-left flex items-center p-3 bg-basetitan-dark hover:bg-basetitan-border rounded-md">

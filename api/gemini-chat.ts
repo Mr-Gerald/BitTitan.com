@@ -15,6 +15,7 @@ const initializeChat = (): Chat => {
     }
     
     if (!process.env.GEMINI_API_KEY) {
+        console.error("CRITICAL: GEMINI_API_KEY environment variable not set. The AI Assistant will not work.");
         throw new Error("GEMINI_API_KEY environment variable not set");
     }
     
@@ -75,6 +76,10 @@ export default async function handle(req: Request) {
         console.error("Error in Gemini chat handler:", error);
         // Reset chat on error in case the state is corrupted
         chat = null;
-        return new Response(JSON.stringify({ error: 'Failed to get response from AI assistant.', details: error.message }), { status: 500 });
+        const errorMessage = error.message.includes("GEMINI_API_KEY") 
+            ? "AI Assistant is not configured correctly." 
+            : "Failed to get response from AI assistant.";
+
+        return new Response(JSON.stringify({ error: errorMessage, details: error.message }), { status: 500 });
     }
 }

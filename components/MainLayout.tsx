@@ -1,4 +1,5 @@
-import React, { useState, useContext } from 'react';
+
+import React, { useState, useContext, useEffect } from 'react';
 import { Page } from '../types';
 import { HOME_ICON, TRADE_ICON, INVEST_ICON, WALLET_ICON, ACCOUNT_ICON, LOGO_ICON, LOGOUT_ICON, MENU_ICON, CLOSE_ICON, AI_ICON, ADMIN_ICON, PORTFOLIO_ICON, ALT_INVEST_ICON, HISTORY_ICON, LOGIN_STREAK_ICON, SUPPORT_ICON, NOTIFICATION_ICON } from '../constants';
 import Dashboard from './Dashboard';
@@ -25,6 +26,18 @@ const MainLayout: React.FC = () => {
     const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
     const [isLiveChatOpen, setIsLiveChatOpen] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+    useEffect(() => {
+        if (!auth) return;
+        
+        // Smart polling for real-time updates
+        const intervalId = setInterval(() => {
+            auth.refreshStateFromServer();
+        }, 5000); // Poll every 5 seconds
+
+        return () => clearInterval(intervalId);
+    }, [auth]);
+
 
     if (!auth || !auth.user) return null;
     const { user, logout, activePage, navigateTo } = auth;
@@ -162,12 +175,12 @@ const MainLayout: React.FC = () => {
                                 </div>
                                 <button 
                                     onClick={handleToggleLiveChat} 
-                                    className="relative text-basetitan-text-secondary hover:text-white"
+                                    className="relative text-basetitan-text-secondary hover:text-white p-2"
                                     aria-label="Live Support"
                                 >
                                     <Icon className="w-6 h-6">{SUPPORT_ICON}</Icon>
                                     {hasUnreadAdminMessage && !isLiveChatOpen && (
-                                        <span className="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full bg-red-500 ring-1 ring-basetitan-light"></span>
+                                        <span className="absolute top-1 right-1 block h-2.5 w-2.5 rounded-full bg-red-500 ring-1 ring-basetitan-light"></span>
                                     )}
                                 </button>
                             </>
