@@ -8,7 +8,6 @@ export const config = {
 // on the hosting platform (e.g., Vercel). They are NOT hardcoded here.
 const EMAIL_SERVER_USER = process.env.EMAIL_SERVER_USER;
 const EMAIL_SERVER_PASSWORD = process.env.EMAIL_SERVER_PASSWORD;
-const EMAIL_FROM = process.env.EMAIL_FROM || EMAIL_SERVER_USER;
 
 const getEmailHtml = (fullName: string): string => {
     // A more robust way to handle SVG for email clients
@@ -77,7 +76,7 @@ export default async function handle(req: Request) {
         });
         
         await transporter.sendMail({
-            from: `"BitTitan" <${EMAIL_FROM}>`,
+            from: `"BitTitan" <${EMAIL_SERVER_USER}>`, // Use the authenticated user's email directly
             to: email,
             subject: 'Welcome to BitTitan!',
             html: getEmailHtml(fullName),
