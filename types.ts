@@ -121,6 +121,7 @@ export interface User {
     isAdmin?: boolean;
     password?: string;
     referralCode: string;
+    referredBy?: number; // ID of the user who referred this user
     loginStreak: number;
     lastLoginDate: string; // YYYY-MM-DD
     verificationStatus: 'Not Verified' | 'Pending' | 'Verified' | 'Rejected';

@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
   const [showInviteBonus, setShowInviteBonus] = useState(false);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   
   useEffect(() => {
     // This effect runs for all visitors, logged in or not.
@@ -26,6 +27,16 @@ const App: React.FC = () => {
     }, 10000); // New notification every 10s
 
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    // Check for referral code in URL on initial load
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref');
+    if (refCode) {
+      setReferralCode(refCode);
+      setIsSignupModalOpen(true); // Automatically open signup modal
+    }
   }, []);
 
   useEffect(() => {
@@ -84,6 +95,7 @@ const App: React.FC = () => {
                     onClose={handleCloseModals}
                     onSwitchToSignup={handleOpenSignup}
                     onSwitchToLogin={handleOpenLogin}
+                    referralCode={referralCode}
                  />
             </div>
         )}

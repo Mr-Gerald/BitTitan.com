@@ -11,7 +11,7 @@ interface AuthContextType {
     isLoading: boolean;
     login: (name: string, pass: string) => { success: boolean; error?: string };
     logout: () => void;
-    signup: (fullName: string, name: string, email: string, pass: string, country: string, dateOfBirth: string, phone: string) => Promise<{ success: boolean; error?: string }>;
+    signup: (fullName: string, name: string, email: string, pass: string, country: string, dateOfBirth: string, phone: string, referralCode?: string | null) => Promise<{ success: boolean; error?: string }>;
     createDefaultAccount: (details: { fullName: string; name: string; email: string; phone: string; dateOfBirth: string; password?: string; avatarUrl: string; address?: string; }) => boolean;
     updateUserBalance: (userId: number, asset: 'BTC' | 'USDT' | 'ETH', amount: number, type: Transaction['type'], description: string) => void;
     addTransaction: (userId: number, transaction: Omit<Transaction, 'id' | 'date'> & { id?: string }) => void;
@@ -24,6 +24,7 @@ interface AuthContextType {
     submitDepositRequest: (request: Omit<DepositRequest, 'id' | 'date' | 'status' | 'userName'>) => void;
     approveDeposit: (requestId: string) => void;
     rejectDeposit: (requestId: string, reason: string) => void;
+    adminDeleteUser: (userId: number) => void;
     checkAndResetLoginFlag: () => boolean;
     liveChatSessions: LiveChatSession[];
     sendLiveChatMessage: (userId: number, text: string) => void;
@@ -82,12 +83,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [error, setError] = useState<string | null>(null);
     const hasHydrated = useRef(false);
 
-    // Initial data hydration from our secure API endpoint
+    // Initial data hydration from our secure API endpoint and local session
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             setError(null);
             try {
+                // Check for logged-in user from previous session
+                const savedUserId = localStorage.getItem('bittitan_userId');
+
                 const response = await fetch('/api/get-state');
 
                 if (response.status === 404 || response.status === 500) { // Handle "bin not found" or config errors
@@ -103,6 +107,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                         setDepositRequests(data.depositRequests || []);
                         setLiveChatSessions(data.liveChatSessions || []);
                         setContactMessages(data.contactMessages || []);
+                         // Restore session only if the user still exists in the database
+                        if (savedUserId && data.allUsers.some((u: User) => u.id === parseInt(savedUserId, 10))) {
+                            setCurrentUserId(parseInt(savedUserId, 10));
+                        }
                     } else {
                         console.log("Bin is empty or has incorrect format. It will be overwritten on the first state change.");
                     }
@@ -178,7 +186,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const login = (name: string, pass: string): { success: boolean; error?: string } => {
         const foundUser = allUsers.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === pass);
         if (foundUser) {
-            // Login is now allowed immediately after signup.
             const today = getTodayDateString();
             
             if (foundUser.lastLoginDate !== today) {
@@ -192,6 +199,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
             
             setCurrentUserId(foundUser.id);
+            localStorage.setItem('bittitan_userId', foundUser.id.toString());
             setActivePage(Page.Dashboard);
             setWasJustLoggedIn(true);
             return { success: true };
@@ -209,17 +217,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     
     const logout = useCallback(() => {
         setCurrentUserId(null);
+        localStorage.removeItem('bittitan_userId');
     }, []);
 
-    const signup = async (fullName: string, name: string, email: string, pass: string, country: string, dateOfBirth: string, phone: string): Promise<{ success: boolean; error?: string }> => {
+    const signup = async (fullName: string, name: string, email: string, pass: string, country: string, dateOfBirth: string, phone: string, referralCode?: string | null): Promise<{ success: boolean; error?: string }> => {
         if (allUsers.some(u => u.email.toLowerCase() === email.toLowerCase() || u.name.toLowerCase() === name.toLowerCase())) {
             return { success: false, error: 'Account with this email or username already exists.' };
         }
         
-        const newUser = generateNewUser(allUsers.length + 1, fullName, name, email, country, dateOfBirth, phone, pass);
+        let newUser = generateNewUser(allUsers.length + 1, fullName, name, email, country, dateOfBirth, phone, pass);
+        
+        if (referralCode) {
+            const referringUser = allUsers.find(u => u.referralCode === referralCode);
+            if (referringUser) {
+                newUser.referredBy = referringUser.id;
+            }
+        }
+        
         setAllUsers(prev => [...prev, newUser]);
         
-        // Fire-and-forget the welcome email API call
         fetch('/api/send-welcome-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -227,7 +243,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }).then(response => {
              if (response.ok) {
                  console.log(`Welcome email sent to ${newUser.email}`);
-                 // Mark that the welcome email has been sent
                  setAllUsers(prevUsers => updateUserInState(prevUsers, newUser.id, u => ({
                     ...u,
                     welcomeEmailSent: true,
@@ -474,7 +489,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const deleteAccount = useCallback((userId: number) => {
         setAllUsers(prev => prev.filter(u => u.id !== userId));
-        setCurrentUserId(null);
+        if (currentUserId === userId) {
+            logout();
+        }
+    }, [currentUserId, logout]);
+
+    const adminDeleteUser = useCallback((userId: number) => {
+        setAllUsers(prev => prev.filter(u => u.id !== userId));
     }, []);
 
     const submitDepositRequest = useCallback((request: Omit<DepositRequest, 'id' | 'date' | 'status' | 'userName'>) => {
@@ -549,6 +570,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         submitDepositRequest,
         approveDeposit,
         rejectDeposit,
+        adminDeleteUser,
         checkAndResetLoginFlag,
         liveChatSessions,
         sendLiveChatMessage,
@@ -573,7 +595,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }), [
         currentUser, allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, isLoading,
         checkAndResetLoginFlag, logout, signup, createDefaultAccount, addTransaction, updateUserBalance, addInvestment, approveInvestment, 
-        updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit, rejectDeposit, sendLiveChatMessage, 
+        updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit, rejectDeposit, adminDeleteUser, sendLiveChatMessage, 
         sendAdminReply, markUserChatAsRead, markAdminChatAsRead, submitContactMessage, markContactMessageAsRead,
         submitVerification, approveVerification, rejectVerification, sendAdminMessage, markNotificationAsRead,
         deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo

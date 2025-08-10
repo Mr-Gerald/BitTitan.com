@@ -10,7 +10,7 @@ interface InviteBonusModalProps {
 
 const InviteBonusModal: React.FC<InviteBonusModalProps> = ({ onClose, referralCode }) => {
     const [copied, setCopied] = useState(false);
-    const referralLink = `https://basetitan.com/signup?ref=${referralCode}`;
+    const referralLink = `https://bit-titan-com.vercel.app/?ref=${referralCode}`;
 
     const handleCopy = () => {
         navigator.clipboard.writeText(referralLink);

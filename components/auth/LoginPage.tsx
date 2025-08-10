@@ -8,6 +8,7 @@ interface LoginPageProps {
     onClose: () => void;
     onSwitchToSignup: () => void;
     onSwitchToLogin: () => void;
+    referralCode?: string | null;
 }
 
 const SignupStatusFeedback: React.FC<{
@@ -43,7 +44,7 @@ const SignupStatusFeedback: React.FC<{
 };
 
 
-const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitchToSignup, onSwitchToLogin }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitchToSignup, onSwitchToLogin, referralCode }) => {
     const [isLoginView, setIsLoginView] = useState(isLoginDefault);
     const [signupStatus, setSignupStatus] = useState<'form' | 'loading' | 'success'>('form');
     
@@ -109,7 +110,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
         if (auth?.signup) {
             // Simulate network delay for better UX
             setTimeout(async () => {
-                const result = await auth.signup(fullName, username, email, password, country, dateOfBirth, phone);
+                const result = await auth.signup(fullName, username, email, password, country, dateOfBirth, phone, referralCode);
                 if(result.success) {
                     setSignupStatus('success');
                 } else {

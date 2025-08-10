@@ -162,6 +162,7 @@ export const generateNewUser = (id: number, fullName: string, name: string, emai
     transactions: [],
     activeInvestments: [],
     referralCode: `${name.toUpperCase().substring(0, 4)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+    referredBy: undefined,
     loginStreak: 0,
     lastLoginDate: '',
     verificationStatus: 'Not Verified',

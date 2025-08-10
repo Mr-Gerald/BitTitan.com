@@ -35,7 +35,7 @@ const getEmailHtml = (fullName: string): string => {
                   </ul>
                 </div>
                 <div style="text-align: center; margin-top: 30px;">
-                    <a href="#" style="background-color: #2f81f7; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">Go to My Dashboard</a>
+                    <a href="https://bit-titan-com.vercel.app/" style="background-color: #2f81f7; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px;">Go to My Dashboard</a>
                 </div>
                 <p style="font-size: 12px; text-align: center; color: #8b949e; margin-top: 30px;">
                     If you have any questions, don't hesitate to use our 24/7 Live Support or ask our AI Assistant.
@@ -66,9 +66,7 @@ export default async function handle(req: Request) {
         }
 
         const transporter = nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 465,
-            secure: true, // use SSL
+            service: 'gmail',
             auth: {
                 user: EMAIL_SERVER_USER,
                 pass: EMAIL_SERVER_PASSWORD,
@@ -76,7 +74,7 @@ export default async function handle(req: Request) {
         });
         
         await transporter.sendMail({
-            from: `"BitTitan" <${EMAIL_SERVER_USER}>`, // Use the authenticated user's email directly
+            from: `"BitTitan" <${EMAIL_SERVER_USER}>`,
             to: email,
             subject: 'Welcome to BitTitan!',
             html: getEmailHtml(fullName),

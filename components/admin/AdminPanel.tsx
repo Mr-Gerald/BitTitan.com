@@ -4,10 +4,11 @@ import { AuthContext } from '../auth/AuthContext';
 import { User, ActiveInvestment, WithdrawalRequest, LiveChatSession, DepositRequest, Page } from '../../types';
 import SendFundsModal from './SendFundsModal';
 import Icon from '../shared/Icon';
-import { SUPPORT_ICON } from '../../constants';
+import { SUPPORT_ICON, TRASH_ICON } from '../../constants';
 import VerificationReviewModal from './VerificationReviewModal';
 import DepositReviewModal from './DepositReviewModal';
 import SendMessageModal from './SendMessageModal';
+import ConfirmationModal from '../shared/ConfirmationModal';
 
 interface InvestmentWithUser extends ActiveInvestment {
     userName: string;
@@ -24,14 +25,16 @@ const AdminPanel: React.FC = () => {
     const [reviewingUser, setReviewingUser] = useState<User | null>(null);
     const [reviewingDeposit, setReviewingDeposit] = useState<DepositRequest | null>(null);
     const [messagingUser, setMessagingUser] = useState<User | null>(null);
+    const [deletingUser, setDeletingUser] = useState<User | null>(null);
     
     if (!auth?.user?.isAdmin) {
         return <div className="p-8"><h1 className="text-3xl font-bold text-accent-danger">Access Denied.</h1></div>;
     }
 
-    const { users, approveInvestment, approveWithdrawal, rejectWithdrawal, withdrawalRequests, liveChatSessions, markAdminChatAsRead, sendAdminReply: doSendAdminReply, contactMessages, markContactMessageAsRead, approveVerification, rejectVerification, depositRequests, approveDeposit, rejectDeposit, navigateTo } = auth;
+    const { users, approveInvestment, approveWithdrawal, rejectWithdrawal, withdrawalRequests, liveChatSessions, markAdminChatAsRead, sendAdminReply: doSendAdminReply, contactMessages, markContactMessageAsRead, approveVerification, rejectVerification, depositRequests, approveDeposit, rejectDeposit, navigateTo, adminDeleteUser } = auth;
 
     const regularUsers = useMemo(() => users.filter(u => !u.isAdmin), [users]);
+    const userMap = useMemo(() => new Map(users.map(u => [u.id, u.name])), [users]);
 
     const allActiveInvestments = useMemo((): InvestmentWithUser[] => {
         return regularUsers
@@ -82,6 +85,13 @@ const AdminPanel: React.FC = () => {
         setAdminReply('');
     };
     
+    const confirmDeleteUser = () => {
+        if(deletingUser) {
+            adminDeleteUser(deletingUser.id);
+            setDeletingUser(null);
+        }
+    };
+
     useEffect(() => {
         if (selectedChat) {
             const updatedSession = liveChatSessions.find(s => s.userId === selectedChat.userId);
@@ -125,6 +135,15 @@ const AdminPanel: React.FC = () => {
                     onClose={() => setMessagingUser(null)}
                 />
             )}
+            {deletingUser && (
+                 <ConfirmationModal
+                    title={`Delete User: ${deletingUser.name}`}
+                    message="Are you sure you want to permanently delete this user? This action is irreversible and will remove all their data."
+                    confirmText="Permanently Delete"
+                    onConfirm={confirmDeleteUser}
+                    onClose={() => setDeletingUser(null)}
+                />
+            )}
             <h1 className="text-3xl font-bold text-white">Administrator Control Panel</h1>
 
             <Card>
@@ -143,6 +162,7 @@ const AdminPanel: React.FC = () => {
                                 <th className="px-4 py-3">User ID</th>
                                 <th className="px-4 py-3">Name</th>
                                 <th className="px-4 py-3">Username</th>
+                                <th className="px-4 py-3">Referred By</th>
                                 <th className="px-4 py-3 text-right">USDT</th>
                                 <th className="px-4 py-3 text-right">BTC</th>
                                 <th className="px-4 py-3 text-right">ETH</th>
@@ -155,6 +175,7 @@ const AdminPanel: React.FC = () => {
                                     <td className="px-4 py-3 font-semibold">{user.id}</td>
                                     <td className="px-4 py-3">{user.fullName}</td>
                                     <td className="px-4 py-3">@{user.name}</td>
+                                    <td className="px-4 py-3 text-basetitan-text-secondary">{user.referredBy ? `@${userMap.get(user.referredBy)}` : 'N/A'}</td>
                                     <td className="px-4 py-3 font-mono text-right">${user.balances.USDT.toFixed(2)}</td>
                                     <td className="px-4 py-3 font-mono text-right">{user.balances.BTC.toFixed(6)}</td>
                                     <td className="px-4 py-3 font-mono text-right">{user.balances.ETH.toFixed(4)}</td>
@@ -168,6 +189,11 @@ const AdminPanel: React.FC = () => {
                                             onClick={() => handleOpenFundModal(user)}
                                             className="bg-accent-primary hover:bg-accent-primary-hover text-white font-bold py-1 px-3 rounded-md text-xs">
                                             Send Funds
+                                        </button>
+                                         <button 
+                                            onClick={() => setDeletingUser(user)}
+                                            className="bg-accent-danger hover:opacity-80 text-white font-bold py-1 px-3 rounded-md text-xs">
+                                            Delete
                                         </button>
                                     </td>
                                 </tr>

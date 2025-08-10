@@ -120,7 +120,7 @@ const Dashboard: React.FC = () => {
       {/* "As Seen On" Section */}
       <div className="mt-8">
         <p className="text-center text-basetitan-text-secondary font-semibold mb-4">AS SEEN ON</p>
-        <div className="flex justify-center items-center space-x-8 opacity-60 grayscale">
+        <div className="flex flex-wrap justify-center items-center gap-8 opacity-60 grayscale">
             <p className="font-bold text-2xl">Forbes</p>
             <p className="font-bold text-2xl">TechCrunch</p>
             <p className="font-bold text-2xl">Binance</p>
