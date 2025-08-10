@@ -230,7 +230,7 @@ const MainLayout: React.FC = () => {
             </div>
 
             {isLiveChatOpen && (
-                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-50 w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
+                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-[60] w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
                     <LiveChat onClose={() => setIsLiveChatOpen(false)} />
                 </div>
             )}

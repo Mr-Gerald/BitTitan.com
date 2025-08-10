@@ -84,6 +84,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const hasHydrated = useRef(false);
+    
+    // Create a ref to hold the latest state. This solves stale closure problems in the save function.
+    const stateRef = useRef({ allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages });
+
+    // Keep the state ref up-to-date with any changes.
+    useEffect(() => {
+        stateRef.current = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
+    }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages]);
+
     const debouncedSaveRef = useRef<number | null>(null);
     
     // A robust, unified save function. Critical actions can call it with `immediate = true`.
@@ -97,34 +106,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             
             console.log(`Persisting state via API (${immediate ? 'immediate' : 'debounced'})...`);
 
-            // Use functional updates to get the latest state at the moment of saving.
-            // This is crucial for reliability and preventing race conditions.
-            setAllUsers(currentUsers => {
-            setWithdrawalRequests(currentWithdrawals => {
-            setDepositRequests(currentDeposits => {
-            setLiveChatSessions(currentChats => {
-            setContactMessages(currentContacts => {
-                const stateToPersist = {
-                    allUsers: currentUsers,
-                    withdrawalRequests: currentWithdrawals,
-                    depositRequests: currentDeposits,
-                    liveChatSessions: currentChats,
-                    contactMessages: currentContacts,
-                };
-                
-                fetch('/api/save-state', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(stateToPersist),
-                }).then(response => {
-                    if (!response.ok) console.error("Failed to persist state:", response.statusText);
-                    else console.log("State persisted successfully.");
-                }).catch(err => console.error("Error persisting state:", err));
-
-                return currentContacts;
-            }); return currentChats; }); return currentDeposits; }); return currentWithdrawals; });
-            return currentUsers;
-            });
+            // Use the ref to get the guaranteed latest state.
+            const stateToPersist = stateRef.current;
+            
+            fetch('/api/save-state', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(stateToPersist),
+            }).then(response => {
+                if (!response.ok) console.error("Failed to persist state:", response.statusText);
+                else console.log("State persisted successfully.");
+            }).catch(err => console.error("Error persisting state:", err));
         };
         
         if (immediate) {
@@ -365,9 +357,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
              if (!user) return prev;
              const existingSession = prev.find(s => s.userId === userId);
              if(existingSession) {
-                 return prev.map(s => s.userId === userId ? {...s, messages: [...s.messages, newMessage], hasUnreadUserMessage: true} : s);
+                 return prev.map(s => s.userId === userId ? {...s, messages: [...s.messages, newMessage], hasUnreadUserMessage: true, hasUnreadAdminMessage: false } : s);
              }
-             return [...prev, { userId, userName: user.name, messages: [{ sender: 'admin', text: `Hi ${user.name}! How can we help you today?`, timestamp: Date.now() }, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: true }];
+             const newSession: LiveChatSession = { 
+                 userId, 
+                 userName: user.name, 
+                 messages: [{ sender: 'admin', text: `Hi ${user.name}! How can we help you today?`, timestamp: Date.now() }, newMessage], 
+                 hasUnreadAdminMessage: false, 
+                 hasUnreadUserMessage: true 
+            };
+             return [...prev, newSession];
         });
         triggerSave(true);
     }, [allUsers, triggerSave]);

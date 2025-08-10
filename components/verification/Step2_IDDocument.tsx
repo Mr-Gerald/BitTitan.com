@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import Card from '../shared/Card';
 import { VerificationData } from '../../types';
