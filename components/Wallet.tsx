@@ -1,3 +1,4 @@
+
 import React, { useState, useContext, useEffect, useRef, useMemo } from 'react';
 import Card from './shared/Card';
 import { AuthContext } from './auth/AuthContext';
@@ -6,6 +7,7 @@ import { Transaction, Page, DepositRequest } from '../types';
 import WithdrawalForm from './wallet/WithdrawalForm';
 import TransactionReceiptModal from './shared/TransactionReceiptModal';
 import CameraCapture from './shared/CameraCapture';
+import { compressImage } from '../../utils/imageCompressor';
 
 const Wallet: React.FC = () => {
     const auth = useContext(AuthContext);
@@ -23,6 +25,7 @@ const Wallet: React.FC = () => {
     const [showCamera, setShowCamera] = useState(false);
     const [depositError, setDepositError] = useState('');
     const [depositSuccess, setDepositSuccess] = useState(false);
+    const [isCompressing, setIsCompressing] = useState(false);
     
     const btcAddress = 'bc1qhdty76qzwavvjwkzk6p6c324slcazm4gvcv69g';
     const usdtTrc20Address = 'TWSZhU1sp51wb8HLeX4mkAAankdzqMAo2e';
@@ -49,22 +52,38 @@ const Wallet: React.FC = () => {
         });
     };
 
-    const handleProofFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleProofFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                setDepositProof(ev.target?.result as string);
-                setDepositError('');
-            };
-            reader.readAsDataURL(file);
+            setIsCompressing(true);
+            setDepositError('');
+            try {
+                const compressedDataUrl = await compressImage(file);
+                setDepositProof(compressedDataUrl);
+            } catch (err) {
+                setDepositError('Could not process image. Please try a different file.');
+                console.error(err);
+            } finally {
+                setIsCompressing(false);
+            }
         }
     };
 
-    const handleCameraCapture = (imageDataUrl: string) => {
-        setDepositProof(imageDataUrl);
+    const handleCameraCapture = async (imageDataUrl: string) => {
         setShowCamera(false);
+        setIsCompressing(true);
         setDepositError('');
+        try {
+            const blob = await (await fetch(imageDataUrl)).blob();
+            const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+            const compressedDataUrl = await compressImage(file);
+            setDepositProof(compressedDataUrl);
+        } catch (err) {
+            setDepositError('Could not process captured image. Please try again.');
+            console.error(err);
+        } finally {
+            setIsCompressing(false);
+        }
     };
 
     const cryptoAmount = useMemo(() => {
@@ -190,7 +209,7 @@ const Wallet: React.FC = () => {
                                 <div className="space-y-4">
                                     <h3 className="text-lg font-bold text-white">Fund Your Account</h3>
                                     <p className="text-sm text-basetitan-text-secondary">Add funds to your balance using approved methods.</p>
-                                     <button onClick={() => setInfoModal({ isOpen: true, title: 'Bank Transfer Instructions', message: 'Please contact <b class="text-white">finance.bittian.secure@gmail.com</b> for bank transfer instructions.'})} className="w-full text-left flex items-center p-3 bg-basetitan-dark hover:bg-basetitan-border rounded-md">
+                                     <button onClick={() => setInfoModal({ isOpen: true, title: 'Bank Transfer Instructions', message: 'Please contact <b class="text-white">finance.bititan.secure@gmail.com</b> for bank transfer instructions.'})} className="w-full text-left flex items-center p-3 bg-basetitan-dark hover:bg-basetitan-border rounded-md">
                                         Bank Transfer
                                     </button>
                                     <button onClick={() => setActiveTab('deposit')} className="w-full text-left flex items-center p-3 bg-basetitan-dark hover:bg-basetitan-border rounded-md">
@@ -250,8 +269,9 @@ const Wallet: React.FC = () => {
                                                 </div>
                                             )}
                                         </div>
+                                        {isCompressing && <p className="text-sm text-accent-primary text-center animate-pulse">Processing image...</p>}
                                         {depositError && <p className="text-sm text-accent-danger text-center">{depositError}</p>}
-                                        <button onClick={handleSubmitDeposit} disabled={!depositUsdAmount || !depositProof} className="w-full bg-accent-secondary hover:bg-accent-secondary-hover text-white font-bold py-3 rounded-md disabled:opacity-50 disabled:cursor-not-allowed">
+                                        <button onClick={handleSubmitDeposit} disabled={!depositUsdAmount || !depositProof || isCompressing} className="w-full bg-accent-secondary hover:bg-accent-secondary-hover text-white font-bold py-3 rounded-md disabled:opacity-50 disabled:cursor-not-allowed">
                                             Submit for Review
                                         </button>
                                     </div>

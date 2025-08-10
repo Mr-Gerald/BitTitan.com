@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import Card from '../shared/Card';
 import { VerificationData } from '../../types';
 import CameraCapture from '../shared/CameraCapture';
+import { compressImage } from '../../utils/imageCompressor';
 
 interface Step2Props {
     nextStep: (data: { idDocument: VerificationData['idDocument'] }) => void;
@@ -18,24 +19,41 @@ const Step2IDDocument: React.FC<Step2Props> = ({ nextStep, prevStep, formData })
         backImage: formData?.backImage || '',
     });
     const [error, setError] = useState('');
+    const [isCompressing, setIsCompressing] = useState(false);
     const [showCameraFor, setShowCameraFor] = useState<'front' | 'back' | null>(null);
     const frontInputRef = useRef<HTMLInputElement>(null);
     const backInputRef = useRef<HTMLInputElement>(null);
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, side: 'front' | 'back') => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, side: 'front' | 'back') => {
         const file = e.target.files?.[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                setDoc({ ...doc, [side === 'front' ? 'frontImage' : 'backImage']: ev.target?.result as string });
-            };
-            reader.readAsDataURL(file);
+            setIsCompressing(true);
+            setError('');
+            try {
+                const compressedDataUrl = await compressImage(file);
+                setDoc({ ...doc, [side === 'front' ? 'frontImage' : 'backImage']: compressedDataUrl });
+            } catch (err) {
+                setError('Could not process image. Please try a different file.');
+            } finally {
+                setIsCompressing(false);
+            }
         }
     };
     
-    const handleCameraCapture = (imageDataUrl: string) => {
+    const handleCameraCapture = async (imageDataUrl: string) => {
         if (showCameraFor) {
-            setDoc({ ...doc, [showCameraFor === 'front' ? 'frontImage' : 'backImage']: imageDataUrl });
+            setIsCompressing(true);
+            setError('');
+            try {
+                const blob = await (await fetch(imageDataUrl)).blob();
+                const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+                const compressedDataUrl = await compressImage(file);
+                setDoc({ ...doc, [showCameraFor === 'front' ? 'frontImage' : 'backImage']: compressedDataUrl });
+            } catch (err) {
+                 setError('Could not process captured image. Please try again.');
+            } finally {
+                setIsCompressing(false);
+            }
         }
         setShowCameraFor(null);
     };
@@ -96,10 +114,11 @@ const Step2IDDocument: React.FC<Step2Props> = ({ nextStep, prevStep, formData })
                     <ImageBox side="back" />
                 </div>
             </div>
+            {isCompressing && <p className="text-sm text-accent-primary text-center mt-4 animate-pulse">Processing image...</p>}
             {error && <p className="text-sm text-accent-danger text-center mt-4">{error}</p>}
             <div className="mt-8 flex justify-between">
                 <button onClick={prevStep} className="bg-basetitan-dark hover:bg-basetitan-border text-white font-bold py-2 px-6 rounded-md">Back</button>
-                <button onClick={handleNext} className="bg-accent-primary hover:bg-accent-primary-hover text-white font-bold py-2 px-6 rounded-md">Next</button>
+                <button onClick={handleNext} disabled={isCompressing} className="bg-accent-primary hover:bg-accent-primary-hover text-white font-bold py-2 px-6 rounded-md disabled:opacity-50">Next</button>
             </div>
         </Card>
     );

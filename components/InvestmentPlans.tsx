@@ -1,3 +1,4 @@
+
 import React, { useState, useContext } from 'react';
 import { INVESTMENT_PLANS, ADMIN_USER } from '../constants';
 import Card from './shared/Card';
@@ -19,7 +20,7 @@ const InvestmentPlans: React.FC = () => {
     const handleInvest = (amount: number, asset: 'BTC' | 'USDT' | 'ETH') => {
         if (!selectedPlan || !auth?.user) return;
 
-        const { user, updateUserBalance, addInvestment } = auth;
+        const { user, updateUserBalance, addInvestment, addNotification } = auth;
         const investmentAmount = amount;
         const totalReturnValue = investmentAmount * selectedPlan.profitMultiplier;
 
@@ -38,6 +39,10 @@ const InvestmentPlans: React.FC = () => {
             potentialReturn: totalReturnValue,
             status: 'Active'
         });
+
+        // 4. Send a notification to the user
+        addNotification(user.id, `Your investment of ${investmentAmount} ${asset} in the ${selectedPlan.name} plan is now active.`, "Investment Started", Page.InvestmentHistory);
+
 
         // The modal will handle its own closing
     };

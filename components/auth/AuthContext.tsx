@@ -50,6 +50,7 @@ interface AuthContextType {
     navigateTo: (page: Page) => void;
     refreshStateFromServer: () => Promise<void>;
     markWelcomeEmailSent: (userId: number) => void;
+    addNotification: (userId: number, message: string, title?: string, link?: Page) => void;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -302,6 +303,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         updateUserBalance(userId, investmentToApprove.asset, investmentToApprove.potentialReturn, 'Profit', `Return from ${investmentToApprove.planName}`);
         updateUserBalance(ADMIN_USER.id, investmentToApprove.asset, -investmentToApprove.potentialReturn, 'Withdrawal', `Return sent for ${investmentToApprove.planName} to ${user.name}`);
+
+        const profitAmount = investmentToApprove.potentialReturn - investmentToApprove.amountInvested;
+        addNotification(userId, `Your profit of ${profitAmount.toFixed(4)} ${investmentToApprove.asset} from the ${investmentToApprove.planName} plan has been credited to your wallet.`, "Profit Credited", Page.Wallet);
 
         const newAllUsers = updateUserInState(allUsers, userId, u => ({
             ...u, activeInvestments: u.activeInvestments.map(inv => inv.id === investmentId ? { ...inv, status: 'Completed' } : inv),
@@ -673,6 +677,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUserTyping, setAdminTyping,
         contactMessages, submitContactMessage, markContactMessageAsRead, submitVerification, approveVerification, rejectVerification, sendAdminMessage,
         markNotificationAsRead, deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, refreshStateFromServer, markWelcomeEmailSent,
+        addNotification,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [
         currentUser, allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, isLoading,
@@ -680,7 +685,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit, rejectDeposit, adminDeleteUser, sendLiveChatMessage, 
         sendAdminReply, markUserChatAsRead, markAdminChatAsRead, setUserTyping, setAdminTyping, submitContactMessage, markContactMessageAsRead,
         submitVerification, approveVerification, rejectVerification, sendAdminMessage, markNotificationAsRead,
-        deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, refreshStateFromServer, markWelcomeEmailSent
+        deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, refreshStateFromServer, markWelcomeEmailSent, addNotification
     ]);
 
 
