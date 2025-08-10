@@ -69,12 +69,13 @@ const AdminPanel: React.FC = () => {
     const [reviewingDeposit, setReviewingDeposit] = useState<DepositRequest | null>(null);
     const [messagingUser, setMessagingUser] = useState<User | null>(null);
     const [deletingUser, setDeletingUser] = useState<User | null>(null);
+    const [typingTimeout, setTypingTimeout] = useState<number | null>(null);
     
     if (!auth?.user?.isAdmin) {
         return <div className="p-8"><h1 className="text-3xl font-bold text-accent-danger">Access Denied.</h1></div>;
     }
 
-    const { users, approveInvestment, approveWithdrawal, rejectWithdrawal, withdrawalRequests, liveChatSessions, markAdminChatAsRead, sendAdminReply: doSendAdminReply, contactMessages, markContactMessageAsRead, approveVerification, rejectVerification, depositRequests, approveDeposit, rejectDeposit, navigateTo, adminDeleteUser, markWelcomeEmailSent } = auth;
+    const { users, approveInvestment, approveWithdrawal, rejectWithdrawal, withdrawalRequests, liveChatSessions, markAdminChatAsRead, sendAdminReply: doSendAdminReply, contactMessages, markContactMessageAsRead, approveVerification, rejectVerification, depositRequests, approveDeposit, rejectDeposit, navigateTo, adminDeleteUser, markWelcomeEmailSent, setAdminTyping } = auth;
 
     const regularUsers = useMemo(() => users.filter(u => !u.isAdmin), [users]);
     const userMap = useMemo(() => new Map(users.map(u => [u.id, u.name])), [users]);
@@ -107,9 +108,27 @@ const AdminPanel: React.FC = () => {
         setSelectedChat(session);
         markAdminChatAsRead(session.userId);
     };
+    
+    const handleAdminReplyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setAdminReply(e.target.value);
+        if (!setAdminTyping || !selectedChat) return;
+
+        if (typingTimeout) {
+            clearTimeout(typingTimeout);
+        } else {
+            setAdminTyping(selectedChat.userId, true);
+        }
+
+        setTypingTimeout(window.setTimeout(() => {
+            setAdminTyping(selectedChat.userId, false);
+            setTypingTimeout(null);
+        }, 2000));
+    };
 
     const handleSendReply = () => {
         if(!adminReply.trim() || !selectedChat) return;
+        if(typingTimeout) clearTimeout(typingTimeout);
+        setAdminTyping?.(selectedChat.userId, false);
         doSendAdminReply(selectedChat.userId, adminReply);
         setAdminReply('');
     };
@@ -300,10 +319,17 @@ const AdminPanel: React.FC = () => {
                                             <span className="text-xs text-basetitan-text-secondary">Seen by user</span>
                                         </div>
                                     )}
+                                     {selectedChat.isUserTyping && (
+                                        <div className="flex justify-start">
+                                            <div className="text-xs text-basetitan-text-secondary italic px-4 py-2">
+                                                User is typing...
+                                            </div>
+                                        </div>
+                                    )}
                                     <div ref={chatMessagesEndRef} />
                                 </div>
                                 <div className="p-4 border-t border-basetitan-border flex items-center space-x-2">
-                                    <input type="text" value={adminReply} onChange={(e) => setAdminReply(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendReply()} placeholder={`Reply to ${selectedChat.userName}...`} className="flex-1 bg-basetitan-light border border-basetitan-border rounded-lg px-4 py-2 focus:ring-accent-primary focus:border-accent-primary" />
+                                    <input type="text" value={adminReply} onChange={handleAdminReplyChange} onKeyDown={(e) => e.key === 'Enter' && handleSendReply()} placeholder={`Reply to ${selectedChat.userName}...`} className="flex-1 bg-basetitan-light border border-basetitan-border rounded-lg px-4 py-2 focus:ring-accent-primary focus:border-accent-primary" />
                                     <button onClick={handleSendReply} disabled={!adminReply.trim()} className="bg-accent-primary text-white rounded-lg p-2 disabled:opacity-50 hover:bg-accent-primary-hover">Send</button>
                                 </div>
                             </>

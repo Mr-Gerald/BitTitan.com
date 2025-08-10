@@ -34,7 +34,7 @@ const MainLayout: React.FC = () => {
         // Smart polling for real-time updates
         const intervalId = setInterval(() => {
             auth.refreshStateFromServer();
-        }, 2000); // Poll every 2 seconds for faster updates
+        }, 1500); // Poll every 1.5 seconds for faster updates
 
         return () => clearInterval(intervalId);
     }, [auth]);
@@ -209,7 +209,7 @@ const MainLayout: React.FC = () => {
                 </header>
 
                 {/* Main Content */}
-                <main className="flex-1 overflow-y-auto bg-basetitan-dark pb-32 lg:pb-0">
+                <main className="flex-1 overflow-y-auto bg-basetitan-dark pb-40 lg:pb-0">
                     {renderPage()}
                 </main>
                 
@@ -230,7 +230,7 @@ const MainLayout: React.FC = () => {
             </div>
 
             {isLiveChatOpen && (
-                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-[60] w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
+                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-[100] w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
                     <LiveChat onClose={() => setIsLiveChatOpen(false)} />
                 </div>
             )}

@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { AuthContext } from '../auth/AuthContext';
 import Icon from './Icon';
@@ -14,6 +15,7 @@ interface LiveChatProps {
 const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
     const auth = useContext(AuthContext);
     const [input, setInput] = useState('');
+    const [typingTimeout, setTypingTimeout] = useState<number | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const user = auth?.user;
 
@@ -37,7 +39,7 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
         }
     }, [user, session, auth]);
 
-    useEffect(scrollToBottom, [messages]);
+    useEffect(scrollToBottom, [messages, session?.isAdminTyping]);
     
     useEffect(() => {
         if (user) {
@@ -45,9 +47,30 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
         }
     }, [user, auth]);
 
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setInput(e.target.value);
+        if (!auth?.setUserTyping || !user) return;
+
+        if (typingTimeout) {
+            clearTimeout(typingTimeout);
+        } else {
+            auth.setUserTyping(user.id, true);
+        }
+
+        setTypingTimeout(window.setTimeout(() => {
+            auth.setUserTyping(user.id, false);
+            setTypingTimeout(null);
+        }, 2000)); // Consider user stopped typing after 2s
+    };
+    
     const handleSend = () => {
-        if (!input.trim() || !user) return;
-        auth?.sendLiveChatMessage(user.id, input);
+        if (!input.trim() || !user || !auth?.sendLiveChatMessage) return;
+
+        if(typingTimeout) clearTimeout(typingTimeout);
+        auth.setUserTyping?.(user.id, false);
+        setTypingTimeout(null);
+        
+        auth.sendLiveChatMessage(user.id, input);
         setInput('');
     };
 
@@ -82,6 +105,14 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
                         <span className="text-xs text-basetitan-text-secondary">Seen</span>
                     </div>
                 )}
+                {session?.isAdminTyping && (
+                    <div className="flex justify-start items-center">
+                         <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0"><Icon className="w-5 h-5 text-white">{SUPPORT_ICON}</Icon></div>
+                         <div className="text-xs text-basetitan-text-secondary italic px-4 py-2">
+                             Admin is typing...
+                         </div>
+                    </div>
+                )}
                 <div ref={messagesEndRef} />
             </main>
 
@@ -90,7 +121,7 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
                     <input
                         type="text"
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={handleInputChange}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                         placeholder="Type your message..."
                         className="flex-1 bg-basetitan-dark border border-basetitan-border rounded-lg px-4 py-2 focus:ring-accent-primary focus:border-accent-primary"

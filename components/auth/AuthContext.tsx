@@ -31,6 +31,8 @@ interface AuthContextType {
     sendAdminReply: (userId: number, text: string) => void;
     markUserChatAsRead: (userId: number) => void;
     markAdminChatAsRead: (userId: number) => void;
+    setUserTyping: (userId: number, isTyping: boolean) => void;
+    setAdminTyping: (userId: number, isTyping: boolean) => void;
     contactMessages: ContactMessage[];
     submitContactMessage: (name: string, email: string, message: string) => void;
     markContactMessageAsRead: (id: string) => void;
@@ -82,6 +84,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
     const [activePage, setActivePage] = useState<Page>(Page.Dashboard);
     const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const hasHydrated = useRef(false);
     
@@ -104,6 +107,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const saveAction = () => {
             if (!hasHydrated.current) return;
             
+            if (immediate) setIsSaving(true);
             console.log(`Persisting state via API (${immediate ? 'immediate' : 'debounced'})...`);
 
             // Use the ref to get the guaranteed latest state.
@@ -116,7 +120,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }).then(response => {
                 if (!response.ok) console.error("Failed to persist state:", response.statusText);
                 else console.log("State persisted successfully.");
-            }).catch(err => console.error("Error persisting state:", err));
+            }).catch(err => console.error("Error persisting state:", err))
+            .finally(() => {
+                if(immediate) setIsSaving(false);
+            });
         };
         
         if (immediate) {
@@ -166,7 +173,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, []);
     
     const refreshStateFromServer = useCallback(async () => {
-        if (!hasHydrated.current) return;
+        if (isSaving || !hasHydrated.current) return;
         try {
             const response = await fetch('/api/get-state');
             if (response.ok) {
@@ -182,7 +189,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } catch (err) {
             console.error("Error during state refresh:", err);
         }
-    }, []);
+    }, [isSaving]);
 
     const currentUser = useMemo(() => {
         if (currentUserId === null) return null;
@@ -387,6 +394,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
          triggerSave();
     }, [triggerSave]);
     
+    const setUserTyping = useCallback((userId: number, isTyping: boolean) => {
+        setLiveChatSessions(prev =>
+            prev.map(s => (s.userId === userId ? { ...s, isUserTyping: isTyping } : s))
+        );
+        triggerSave(false); // Debounced save is fine for typing status
+    }, [triggerSave]);
+    
+    const setAdminTyping = useCallback((userId: number, isTyping: boolean) => {
+        setLiveChatSessions(prev =>
+            prev.map(s => (s.userId === userId ? { ...s, isAdminTyping: isTyping } : s))
+        );
+        triggerSave(false); // Debounced save is fine for typing status
+    }, [triggerSave]);
+
     const submitContactMessage = useCallback((name: string, email: string, message: string) => {
         const newMessage: ContactMessage = { id: `cm-${Date.now()}`, name, email, message, date: getISODateString(), read: false };
         setContactMessages(prev => [newMessage, ...prev]);
@@ -525,6 +546,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         user: currentUser, users: allUsers, withdrawalRequests, depositRequests, isLoading, login, logout, signup, createDefaultAccount, updateUserBalance,
         addTransaction, addInvestment, approveInvestment, updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit,
         rejectDeposit, adminDeleteUser, checkAndResetLoginFlag, liveChatSessions, sendLiveChatMessage, sendAdminReply, markUserChatAsRead, markAdminChatAsRead,
+        setUserTyping, setAdminTyping,
         contactMessages, submitContactMessage, markContactMessageAsRead, submitVerification, approveVerification, rejectVerification, sendAdminMessage,
         markNotificationAsRead, deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, refreshStateFromServer, markWelcomeEmailSent,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -532,7 +554,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         currentUser, allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, isLoading,
         checkAndResetLoginFlag, logout, signup, createDefaultAccount, addTransaction, updateUserBalance, addInvestment, approveInvestment, 
         updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit, rejectDeposit, adminDeleteUser, sendLiveChatMessage, 
-        sendAdminReply, markUserChatAsRead, markAdminChatAsRead, submitContactMessage, markContactMessageAsRead,
+        sendAdminReply, markUserChatAsRead, markAdminChatAsRead, setUserTyping, setAdminTyping, submitContactMessage, markContactMessageAsRead,
         submitVerification, approveVerification, rejectVerification, sendAdminMessage, markNotificationAsRead,
         deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, refreshStateFromServer, markWelcomeEmailSent
     ]);

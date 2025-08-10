@@ -195,6 +195,8 @@ export interface LiveChatSession {
     messages: LiveChatMessage[];
     hasUnreadAdminMessage: boolean; // For user notification
     hasUnreadUserMessage: boolean; // For admin notification
+    isUserTyping?: boolean;
+    isAdminTyping?: boolean;
 }
 
 export interface ContactMessage {
