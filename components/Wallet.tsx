@@ -7,7 +7,7 @@ import { Transaction, Page, DepositRequest } from '../types';
 import WithdrawalForm from './wallet/WithdrawalForm';
 import TransactionReceiptModal from './shared/TransactionReceiptModal';
 import CameraCapture from './shared/CameraCapture';
-import { compressImage } from '../../utils/imageCompressor';
+import { compressImage } from '../utils/imageCompressor';
 
 const Wallet: React.FC = () => {
     const auth = useContext(AuthContext);
