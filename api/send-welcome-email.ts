@@ -1,5 +1,4 @@
 import nodemailer from 'nodemailer';
-import { LOGO_ICON } from '../constants';
 
 export const config = {
   runtime: 'nodejs',
