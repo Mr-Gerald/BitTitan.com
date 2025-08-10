@@ -99,7 +99,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages]);
 
     // A robust, unified save function. Critical actions can call it with `immediate = true`.
-    const triggerSave = useCallback((immediate = false) => {
+    const triggerSave = useCallback((stateToPersist: any, immediate = false) => {
         if (debouncedSaveRef.current) {
             clearTimeout(debouncedSaveRef.current);
         }
@@ -107,13 +107,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const saveAction = () => {
             if (!hasHydrated.current) return;
             
-            if (immediate) {
-                isSavingRef.current = true; // Engage the lock
-            }
             console.log(`Persisting state via API (${immediate ? 'immediate' : 'debounced'})...`);
-
-            // Use the ref to get the guaranteed latest state.
-            const stateToPersist = stateRef.current;
             
             fetch('/api/save-state', {
                 method: 'PUT',
@@ -123,11 +117,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 if (!response.ok) console.error("Failed to persist state:", response.statusText);
                 else console.log("State persisted successfully.");
             }).catch(err => console.error("Error persisting state:", err))
-            .finally(() => {
-                if(immediate) {
-                    isSavingRef.current = false; // Release the lock
-                }
-            });
         };
         
         if (immediate) {
@@ -208,20 +197,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const login = (name: string, pass: string): { success: boolean; error?: string } => {
         const foundUser = allUsers.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === pass);
         if (foundUser) {
-            setAllUsers(prevUsers => {
-                const today = getTodayDateString();
-                if (foundUser.lastLoginDate !== today) {
-                    const updatedUsers = updateUserInState(prevUsers, foundUser.id, user => {
-                        const yesterday = new Date();
-                        yesterday.setDate(yesterday.getDate() - 1);
-                        const newStreak = user.lastLoginDate === yesterday.toISOString().split('T')[0] ? user.loginStreak + 1 : 1;
-                        return { ...user, lastLoginDate: today, loginStreak: newStreak };
-                    });
-                     triggerSave(); // Debounced save is fine here
-                    return updatedUsers;
-                }
-                return prevUsers;
-            });
+            let updatedUsers = allUsers;
+            const today = getTodayDateString();
+            if (foundUser.lastLoginDate !== today) {
+                updatedUsers = updateUserInState(allUsers, foundUser.id, user => {
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const newStreak = user.lastLoginDate === yesterday.toISOString().split('T')[0] ? user.loginStreak + 1 : 1;
+                    return { ...user, lastLoginDate: today, loginStreak: newStreak };
+                });
+                setAllUsers(updatedUsers);
+                 triggerSave({ ...stateRef.current, allUsers: updatedUsers });
+            }
             setCurrentUserId(foundUser.id);
             localStorage.setItem('bittitan_userId', foundUser.id.toString());
             setActivePage(Page.Dashboard);
@@ -256,8 +243,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (referringUser) newUser.referredBy = referringUser.id;
         }
         
-        setAllUsers(prev => [...prev, newUser]);
-        triggerSave(true); // Immediate save for new user
+        const newAllUsers = [...allUsers, newUser];
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
         
         return { success: true };
     };
@@ -267,21 +255,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return false;
         }
         const newUser = generateDefaultAccount(Date.now(), details);
-        setAllUsers(prev => [...prev, newUser]);
-        triggerSave(true); // Immediate save
+        const newAllUsers = [...allUsers, newUser];
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
         return true;
     };
     
     const addTransaction = useCallback((userId: number, transaction: Omit<Transaction, 'id' | 'date'> & { id?: string }) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
+        const newAllUsers = updateUserInState(allUsers, userId, user => {
             const newTransaction: Transaction = { ...transaction, id: transaction.id || `tx${Date.now()}`, date: getTodayDateString() };
             return { ...user, transactions: [newTransaction, ...user.transactions] };
-        }));
-        // No save here; called by other functions that will save.
-    }, []);
+        });
+        setAllUsers(newAllUsers);
+        return newAllUsers;
+    }, [allUsers]);
     
     const updateUserBalance = useCallback((userId: number, asset: 'BTC' | 'USDT' | 'ETH', amount: number, type: Transaction['type'], description: string) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
+        const newAllUsers = updateUserInState(allUsers, userId, user => {
             const newBalance = user.balances[asset] + amount;
             const newTransaction: Transaction = {
                 id: `tx${Date.now()}`, type, asset, amount: Math.abs(amount), description, date: getTodayDateString(), status: 'Completed',
@@ -291,17 +281,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 balances: { ...user.balances, [asset]: newBalance < 0 ? 0 : newBalance },
                 transactions: [newTransaction, ...user.transactions],
             };
-        }));
-        triggerSave(true); // Balance changes are critical
-    }, [triggerSave]);
+        });
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
+    }, [allUsers, triggerSave]);
 
     const addInvestment = useCallback((userId: number, investment: Omit<ActiveInvestment, 'id'>) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
+        const newAllUsers = updateUserInState(allUsers, userId, user => {
              const newInvestment: ActiveInvestment = { ...investment, id: `inv${Date.now()}` };
             return { ...user, activeInvestments: [newInvestment, ...user.activeInvestments] };
-        }));
-        triggerSave(true); // Investment is a critical action
-    }, [triggerSave]);
+        });
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
+    }, [allUsers, triggerSave]);
     
     const approveInvestment = useCallback((userId: number, investmentId: string) => {
         const user = allUsers.find(u => u.id === userId);
@@ -311,240 +303,368 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         updateUserBalance(userId, investmentToApprove.asset, investmentToApprove.potentialReturn, 'Profit', `Return from ${investmentToApprove.planName}`);
         updateUserBalance(ADMIN_USER.id, investmentToApprove.asset, -investmentToApprove.potentialReturn, 'Withdrawal', `Return sent for ${investmentToApprove.planName} to ${user.name}`);
 
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, u => ({
+        const newAllUsers = updateUserInState(allUsers, userId, u => ({
             ...u, activeInvestments: u.activeInvestments.map(inv => inv.id === investmentId ? { ...inv, status: 'Completed' } : inv),
-        })));
-        triggerSave(true);
+        }));
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
     }, [allUsers, updateUserBalance, triggerSave]);
 
     const updateUserProfile = useCallback((userId: number, profileData: Partial<Pick<User, 'name' | 'avatarUrl' | 'phone' | 'country' | 'bio'>>) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({ ...user, ...profileData })));
-        triggerSave();
-    }, [triggerSave]);
+        const newAllUsers = updateUserInState(allUsers, userId, user => ({ ...user, ...profileData }));
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers });
+    }, [allUsers, triggerSave]);
 
     const addNotification = useCallback((userId: number, message: string, title?: string, link?: Page) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
+        let finalUsers: User[] | undefined;
+        setAllUsers(prevUsers => {
             const newNotification: Notification = { id: `notif-${Date.now()}`, title, message, link, read: false, date: getISODateString() };
-            return { ...user, notifications: [newNotification, ...user.notifications] };
-        }));
-        triggerSave();
+            finalUsers = updateUserInState(prevUsers, userId, user => ({ ...user, notifications: [newNotification, ...user.notifications] }));
+            return finalUsers;
+        });
+        if (finalUsers) {
+             triggerSave({ ...stateRef.current, allUsers: finalUsers });
+        }
     }, [triggerSave]);
     
     const submitWithdrawalRequest = useCallback((request: Omit<WithdrawalRequest, 'id' | 'date' | 'status'>) => {
         const newRequest: WithdrawalRequest = { ...request, id: `wd-${Date.now()}`, date: getTodayDateString(), status: 'Pending' };
-        setWithdrawalRequests(prev => [newRequest, ...prev]);
-        addTransaction(request.userId, { id: newRequest.id, type: 'Withdrawal', asset: request.asset, amount: request.amount, description: `Request to ${request.address}`, status: 'Pending' });
-        triggerSave(true);
-    }, [addTransaction, triggerSave]);
+        
+        const newAllUsers = addTransaction(request.userId, { id: newRequest.id, type: 'Withdrawal', asset: request.asset, amount: request.amount, description: `Request to ${request.address}`, status: 'Pending' });
+        const newWithdrawalRequests = [newRequest, ...withdrawalRequests];
+        setWithdrawalRequests(newWithdrawalRequests);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers, withdrawalRequests: newWithdrawalRequests }, true);
+    }, [addTransaction, withdrawalRequests, triggerSave]);
 
     const approveWithdrawal = useCallback((requestId: string) => {
         const request = withdrawalRequests.find(r => r.id === requestId);
         if (!request) return;
-        setAllUsers(prevUsers => updateUserInState(prevUsers, request.userId, u => ({
+        
+        const newAllUsers = updateUserInState(allUsers, request.userId, u => ({
             ...u,
             balances: { ...u.balances, [request.asset]: u.balances[request.asset] - request.amount },
             transactions: u.transactions.map(tx => tx.id === requestId ? { ...tx, status: 'Completed', description: `Withdrawal to ${request.address}` } : tx)
-        })));
-        setWithdrawalRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Approved' } : r));
+        }));
+        setAllUsers(newAllUsers);
+        
+        const newWithdrawalRequests = withdrawalRequests.map((r): WithdrawalRequest => r.id === requestId ? { ...r, status: 'Approved' } : r);
+        setWithdrawalRequests(newWithdrawalRequests);
+
         addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} has been approved.`, "Withdrawal Approved");
-        triggerSave(true);
-    }, [withdrawalRequests, addNotification, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers, withdrawalRequests: newWithdrawalRequests }, true);
+    }, [allUsers, withdrawalRequests, addNotification, triggerSave]);
 
     const rejectWithdrawal = useCallback((requestId: string) => {
         const request = withdrawalRequests.find(r => r.id === requestId);
         if (!request) return;
-        setAllUsers(prevUsers => updateUserInState(prevUsers, request.userId, u => ({
+        
+        const newAllUsers = updateUserInState(allUsers, request.userId, u => ({
             ...u, transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Rejected' } : tx)
-        })));
-        setWithdrawalRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Rejected' } : r));
+        }));
+        setAllUsers(newAllUsers);
+
+        const newWithdrawalRequests = withdrawalRequests.map((r): WithdrawalRequest => r.id === requestId ? { ...r, status: 'Rejected' } : r);
+        setWithdrawalRequests(newWithdrawalRequests);
         addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} was rejected. Please contact support.`, "Withdrawal Rejected");
-        triggerSave(true);
-    }, [withdrawalRequests, addNotification, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers, withdrawalRequests: newWithdrawalRequests }, true);
+    }, [allUsers, withdrawalRequests, addNotification, triggerSave]);
 
     const sendLiveChatMessage = useCallback((userId: number, text: string) => {
         const newMessage: LiveChatMessage = { sender: 'user', text, timestamp: Date.now() };
-        setLiveChatSessions(prev => {
-             const user = allUsers.find(u => u.id === userId);
-             if (!user) return prev;
-             const existingSession = prev.find(s => s.userId === userId);
-             if(existingSession) {
-                 return prev.map(s => s.userId === userId ? {...s, messages: [...s.messages, newMessage], hasUnreadUserMessage: true, hasUnreadAdminMessage: false } : s);
-             }
-             const newSession: LiveChatSession = { 
-                 userId, 
-                 userName: user.name, 
-                 messages: [{ sender: 'admin', text: `Hi ${user.name}! How can we help you today?`, timestamp: Date.now() }, newMessage], 
-                 hasUnreadAdminMessage: false, 
-                 hasUnreadUserMessage: true 
+        let newSessions: LiveChatSession[];
+        const user = allUsers.find(u => u.id === userId);
+        if (!user) return;
+        const existingSession = liveChatSessions.find(s => s.userId === userId);
+        if(existingSession) {
+            newSessions = liveChatSessions.map(s => s.userId === userId ? {...s, messages: [...s.messages, newMessage], hasUnreadUserMessage: true, hasUnreadAdminMessage: false } : s);
+        } else {
+            const newSession: LiveChatSession = { 
+                userId, 
+                userName: user.name, 
+                messages: [{ sender: 'admin', text: `Hi ${user.name}! How can we help you today?`, timestamp: Date.now() }, newMessage], 
+                hasUnreadAdminMessage: false, 
+                hasUnreadUserMessage: true 
             };
-             return [...prev, newSession];
-        });
-        triggerSave(true);
-    }, [allUsers, triggerSave]);
+            newSessions = [...liveChatSessions, newSession];
+        }
+        setLiveChatSessions(newSessions);
+        triggerSave({ ...stateRef.current, liveChatSessions: newSessions }, true);
+    }, [allUsers, liveChatSessions, triggerSave]);
 
     const sendAdminReply = useCallback((userId: number, text: string) => {
         const newMessage: LiveChatMessage = { sender: 'admin', text, timestamp: Date.now() };
-        setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, messages: [...s.messages, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: false } : s));
-        triggerSave(true);
-    }, [triggerSave]);
+        const newSessions = liveChatSessions.map(s => s.userId === userId ? { ...s, messages: [...s.messages, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: false } : s);
+        setLiveChatSessions(newSessions);
+        triggerSave({ ...stateRef.current, liveChatSessions: newSessions }, true);
+    }, [liveChatSessions, triggerSave]);
 
     const markUserChatAsRead = useCallback((userId: number) => {
-         setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, hasUnreadAdminMessage: false } : s));
-         triggerSave();
-    }, [triggerSave]);
+         const newSessions = liveChatSessions.map(s => s.userId === userId ? { ...s, hasUnreadAdminMessage: false } : s);
+         setLiveChatSessions(newSessions);
+         triggerSave({ ...stateRef.current, liveChatSessions: newSessions });
+    }, [liveChatSessions, triggerSave]);
     
     const markAdminChatAsRead = useCallback((userId: number) => {
-         setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, hasUnreadUserMessage: false } : s));
-         triggerSave();
-    }, [triggerSave]);
+         const newSessions = liveChatSessions.map(s => s.userId === userId ? { ...s, hasUnreadUserMessage: false } : s);
+         setLiveChatSessions(newSessions);
+         triggerSave({ ...stateRef.current, liveChatSessions: newSessions });
+    }, [liveChatSessions, triggerSave]);
     
     const setUserTyping = useCallback((userId: number, isTyping: boolean) => {
-        setLiveChatSessions(prev =>
-            prev.map(s => (s.userId === userId ? { ...s, isUserTyping: isTyping } : s))
-        );
-        triggerSave(false); // Debounced save is fine for typing status
-    }, [triggerSave]);
+        const newSessions = liveChatSessions.map(s => (s.userId === userId ? { ...s, isUserTyping: isTyping } : s));
+        setLiveChatSessions(newSessions);
+        triggerSave({ ...stateRef.current, liveChatSessions: newSessions }, false);
+    }, [liveChatSessions, triggerSave]);
     
     const setAdminTyping = useCallback((userId: number, isTyping: boolean) => {
-        setLiveChatSessions(prev =>
-            prev.map(s => (s.userId === userId ? { ...s, isAdminTyping: isTyping } : s))
-        );
-        triggerSave(false); // Debounced save is fine for typing status
-    }, [triggerSave]);
+        const newSessions = liveChatSessions.map(s => (s.userId === userId ? { ...s, isAdminTyping: isTyping } : s));
+        setLiveChatSessions(newSessions);
+        triggerSave({ ...stateRef.current, liveChatSessions: newSessions }, false);
+    }, [liveChatSessions, triggerSave]);
 
     const submitContactMessage = useCallback((name: string, email: string, message: string) => {
         const newMessage: ContactMessage = { id: `cm-${Date.now()}`, name, email, message, date: getISODateString(), read: false };
-        setContactMessages(prev => [newMessage, ...prev]);
-        triggerSave(true);
-    }, [triggerSave]);
+        const newContactMessages = [newMessage, ...contactMessages];
+        setContactMessages(newContactMessages);
+        triggerSave({ ...stateRef.current, contactMessages: newContactMessages }, true);
+    }, [contactMessages, triggerSave]);
 
     const markContactMessageAsRead = useCallback((id: string) => {
-        setContactMessages(prev => prev.map(msg => msg.id === id ? { ...msg, read: true } : msg));
-        triggerSave();
-    }, [triggerSave]);
+        const newContactMessages = contactMessages.map(msg => msg.id === id ? { ...msg, read: true } : msg);
+        setContactMessages(newContactMessages);
+        triggerSave({ ...stateRef.current, contactMessages: newContactMessages });
+    }, [contactMessages, triggerSave]);
 
     const sendAdminMessage = useCallback((userId: number, message: string) => {
         addNotification(userId, message);
     }, [addNotification]);
     
     const submitVerification = useCallback((userId: number, data: VerificationData) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
-            ...user, verificationStatus: 'Pending', verificationData: data,
-        })));
-        addNotification(userId, 'Your verification documents have been submitted and are now pending review.', 'Verification Pending', Page.Account);
-        triggerSave(true);
-    }, [addNotification, triggerSave]);
+        isSavingRef.current = true; // Engage lock
+
+        // --- ATOMIC STATE CONSTRUCTION ---
+        // 1. Create all new data artifacts
+        const newNotification: Notification = {
+            id: `notif-${Date.now()}`,
+            title: 'Verification Pending',
+            message: 'Your verification documents have been submitted and are now pending review.',
+            link: Page.Account, read: false, date: getISODateString()
+        };
+
+        // 2. Calculate the next state for allUsers
+        const newAllUsers = stateRef.current.allUsers.map((u): User => {
+            if (u.id === userId) {
+                return {
+                    ...u,
+                    verificationStatus: 'Pending',
+                    verificationData: data,
+                    notifications: [newNotification, ...u.notifications]
+                };
+            }
+            return u;
+        });
+
+        // 3. Construct the complete next state object
+        const nextState = {
+            ...stateRef.current,
+            allUsers: newAllUsers,
+        };
+        // --- END ATOMIC STATE CONSTRUCTION ---
+
+        // 4. Update UI state with the new object
+        setAllUsers(nextState.allUsers);
+
+        // 5. Persist the exact same object to the server
+        fetch('/api/save-state', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nextState),
+        })
+        .then(response => { if (!response.ok) console.error("Failed to persist state:", response.statusText); })
+        .catch(err => console.error("Error persisting state:", err))
+        .finally(() => { isSavingRef.current = false; }); // Release lock
+    }, []);
 
     const approveVerification = useCallback((userId: number) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
+        const newAllUsers = updateUserInState(allUsers, userId, (user): User => ({
             ...user, verificationStatus: 'Verified', verificationData: undefined,
-        })));
+        }));
+        setAllUsers(newAllUsers);
         addNotification(userId, 'Congratulations! Your account has been verified.', 'Verification Approved');
-        triggerSave(true);
-    }, [addNotification, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
+    }, [allUsers, addNotification, triggerSave]);
     
     const rejectVerification = useCallback((userId: number, reason: string) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
+        const newAllUsers = updateUserInState(allUsers, userId, (user): User => ({
             ...user, verificationStatus: 'Rejected', verificationData: undefined,
-        })));
+        }));
+        setAllUsers(newAllUsers);
         addNotification(userId, `Your verification was rejected. Reason: ${reason}.`, 'Verification Rejected', Page.Verification);
-        triggerSave(true);
-    }, [addNotification, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
+    }, [allUsers, addNotification, triggerSave]);
     
     const markNotificationAsRead = useCallback((userId: number, notificationId: string) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
+        const newAllUsers = updateUserInState(allUsers, userId, user => ({
             ...user, notifications: user.notifications.map(n => n.id === notificationId ? { ...n, read: true } : n)
-        })));
-        triggerSave();
-    }, [triggerSave]);
+        }));
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers });
+    }, [allUsers, triggerSave]);
     
     const deleteNotification = useCallback((userId: number, notificationId: string) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
+        const newAllUsers = updateUserInState(allUsers, userId, user => ({
             ...user, notifications: user.notifications.filter(n => n.id !== notificationId)
-        })));
-        triggerSave();
-    }, [triggerSave]);
+        }));
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers });
+    }, [allUsers, triggerSave]);
 
     const changePassword = useCallback((userId: number, currentPass: string, newPass: string): { success: boolean, message: string } => {
         let result = { success: false, message: "Current password is not correct." };
-        setAllUsers(prevUsers => {
-            const user = prevUsers.find(u => u.id === userId);
-            if (!user || user.password !== currentPass) return prevUsers;
-            result = { success: true, message: "Password changed successfully." };
-            return updateUserInState(prevUsers, userId, u => ({ ...u, password: newPass }));
-        });
-        if (result.success) triggerSave(true);
+        let finalUsers = allUsers;
+        const user = allUsers.find(u => u.id === userId);
+        if (user && user.password === currentPass) {
+             finalUsers = updateUserInState(allUsers, userId, u => ({ ...u, password: newPass }));
+             setAllUsers(finalUsers);
+             result = { success: true, message: "Password changed successfully." };
+             triggerSave({ ...stateRef.current, allUsers: finalUsers }, true);
+        }
         return result;
-    }, [triggerSave]);
+    }, [allUsers, triggerSave]);
     
     const toggle2FA = useCallback((userId: number, code?: string): { success: boolean, message: string } => {
         let result = { success: false, message: "User not found." };
-        setAllUsers(prevUsers => {
-            const user = prevUsers.find(u => u.id === userId);
-            if (!user) return prevUsers;
+        let finalUsers = allUsers;
+        const user = allUsers.find(u => u.id === userId);
+        if (user) {
             const isEnabling = !user.is2FAEnabled;
             if (isEnabling && (!code || !/^\d{6}$/.test(code))) {
                 result = { success: false, message: "Invalid 6-digit code." };
-                return prevUsers;
+            } else {
+                 finalUsers = updateUserInState(allUsers, userId, u => ({ ...u, is2FAEnabled: isEnabling }));
+                 setAllUsers(finalUsers);
+                 result = { success: true, message: `2FA ${isEnabling ? 'enabled' : 'disabled'} successfully.` };
+                 triggerSave({ ...stateRef.current, allUsers: finalUsers }, true);
             }
-            result = { success: true, message: `2FA ${isEnabling ? 'enabled' : 'disabled'} successfully.` };
-            return updateUserInState(prevUsers, userId, u => ({ ...u, is2FAEnabled: isEnabling }));
-        });
-        if (result.success) triggerSave(true);
+        }
         return result;
-    }, [triggerSave]);
+    }, [allUsers, triggerSave]);
 
     const deleteAccount = useCallback((userId: number) => {
-        setAllUsers(prev => prev.filter(u => u.id !== userId));
+        const newAllUsers = allUsers.filter(u => u.id !== userId);
+        setAllUsers(newAllUsers);
         if (currentUserId === userId) logout();
-        triggerSave(true);
-    }, [currentUserId, logout, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
+    }, [allUsers, currentUserId, logout, triggerSave]);
 
     const adminDeleteUser = useCallback((userId: number) => {
-        setAllUsers(prev => prev.filter(u => u.id !== userId));
-        triggerSave(true);
-    }, [triggerSave]);
+        const newAllUsers = allUsers.filter(u => u.id !== userId);
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers }, true);
+    }, [allUsers, triggerSave]);
 
     const submitDepositRequest = useCallback((request: Omit<DepositRequest, 'id' | 'date' | 'status' | 'userName'>) => {
-        const user = allUsers.find(u => u.id === request.userId);
-        if (!user) return;
-        const newRequest: DepositRequest = { ...request, id: `dep-${Date.now()}`, date: getTodayDateString(), status: 'Pending', userName: user.name };
-        setDepositRequests(prev => [newRequest, ...prev]);
-        addTransaction(request.userId, { id: newRequest.id, type: 'Deposit', asset: request.asset, amount: request.amount, description: 'Crypto deposit review', status: 'Pending' });
-        addNotification(request.userId, `Your deposit of ${request.amount} ${request.asset} is pending review.`, "Deposit Request Submitted");
-        triggerSave(true);
-    }, [allUsers, addTransaction, addNotification, triggerSave]);
+        isSavingRef.current = true; // Engage lock
+
+        const user = stateRef.current.allUsers.find(u => u.id === request.userId);
+        if (!user) {
+            isSavingRef.current = false;
+            return;
+        }
+
+        // --- ATOMIC STATE CONSTRUCTION ---
+        // 1. Create all new data artifacts
+        const newRequest: DepositRequest = {
+            ...request, id: `dep-${Date.now()}`, date: getTodayDateString(), status: 'Pending', userName: user.name
+        };
+        const newTransaction: Transaction = {
+            id: newRequest.id, type: 'Deposit', asset: request.asset, amount: request.amount,
+            description: 'Crypto deposit review', status: 'Pending', date: getTodayDateString()
+        };
+        const newNotification: Notification = {
+            id: `notif-${Date.now()}`, title: "Deposit Request Submitted",
+            message: `Your deposit of ${request.amount} ${request.asset} is pending review.`,
+            read: false, date: getISODateString()
+        };
+
+        // 2. Calculate the next state for relevant slices
+        const newAllUsers = stateRef.current.allUsers.map(u => {
+            if (u.id === request.userId) {
+                return {
+                    ...u,
+                    transactions: [newTransaction, ...u.transactions],
+                    notifications: [newNotification, ...u.notifications]
+                };
+            }
+            return u;
+        });
+        const newDepositRequests = [newRequest, ...stateRef.current.depositRequests];
+
+        // 3. Construct the complete next state object
+        const nextState = {
+            ...stateRef.current,
+            allUsers: newAllUsers,
+            depositRequests: newDepositRequests
+        };
+        // --- END ATOMIC STATE CONSTRUCTION ---
+        
+        // 4. Update UI state with the new object
+        setAllUsers(nextState.allUsers);
+        setDepositRequests(nextState.depositRequests);
+        
+        // 5. Persist the exact same object to the server
+        fetch('/api/save-state', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(nextState),
+        })
+        .then(response => { if (!response.ok) console.error("Failed to persist state:", response.statusText); })
+        .catch(err => console.error("Error persisting state:", err))
+        .finally(() => { isSavingRef.current = false; }); // Release lock
+    }, []);
 
     const approveDeposit = useCallback((requestId: string) => {
         const request = depositRequests.find(r => r.id === requestId);
         if (!request) return;
-        setAllUsers(prevUsers => updateUserInState(prevUsers, request.userId, u => ({
+
+        const newAllUsers = updateUserInState(allUsers, request.userId, u => ({
             ...u,
             balances: { ...u.balances, [request.asset]: u.balances[request.asset] + request.amount },
             transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Completed', type: 'Deposit', description: 'Approved crypto deposit' } : tx)
-        })));
-        setDepositRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Approved' } : r));
+        }));
+        setAllUsers(newAllUsers);
+
+        const newDepositRequests = depositRequests.map((r): DepositRequest => r.id === requestId ? { ...r, status: 'Approved' } : r);
+        setDepositRequests(newDepositRequests);
+        
         addNotification(request.userId, `Your deposit of ${request.amount} ${request.asset} has been approved.`, "Deposit Approved");
-        triggerSave(true);
-    }, [depositRequests, addNotification, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers, depositRequests: newDepositRequests }, true);
+    }, [depositRequests, allUsers, addNotification, triggerSave]);
     
     const rejectDeposit = useCallback((requestId: string, reason: string) => {
         const request = depositRequests.find(r => r.id === requestId);
         if (!request) return;
-        setDepositRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Rejected' } : r));
-        setAllUsers(prevUsers => updateUserInState(prevUsers, request.userId, u => ({
+
+        const newDepositRequests = depositRequests.map((r): DepositRequest => r.id === requestId ? { ...r, status: 'Rejected' } : r);
+        setDepositRequests(newDepositRequests);
+        
+        const newAllUsers = updateUserInState(allUsers, request.userId, u => ({
             ...u, transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Rejected' } : tx)
-        })));
+        }));
+        setAllUsers(newAllUsers);
+        
         addNotification(request.userId, `Your deposit was rejected. Reason: ${reason}`, "Deposit Rejected");
-        triggerSave(true);
-    }, [depositRequests, addNotification, triggerSave]);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers, depositRequests: newDepositRequests }, true);
+    }, [depositRequests, allUsers, addNotification, triggerSave]);
     
     const markWelcomeEmailSent = useCallback((userId: number) => {
-        setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
+        const newAllUsers = updateUserInState(allUsers, userId, user => ({
             ...user, welcomeEmailSent: true
-        })));
-        triggerSave();
-    }, [triggerSave]);
+        }));
+        setAllUsers(newAllUsers);
+        triggerSave({ ...stateRef.current, allUsers: newAllUsers });
+    }, [allUsers, triggerSave]);
 
     const value = useMemo(() => ({
         user: currentUser, users: allUsers, withdrawalRequests, depositRequests, isLoading, login, logout, signup, createDefaultAccount, updateUserBalance,
