@@ -42,7 +42,7 @@ const AdminPanel: React.FC = () => {
             )
             .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
     }, [regularUsers]);
-
+    
     const pendingWithdrawals = useMemo(() => 
         withdrawalRequests.filter(req => req.status === 'Pending'), 
     [withdrawalRequests]);
@@ -176,7 +176,7 @@ const AdminPanel: React.FC = () => {
                     </table>
                 </div>
             </Card>
-            
+
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
                 <Card>
                     <h2 className="text-xl font-bold text-white mb-4">Deposit Requests</h2>

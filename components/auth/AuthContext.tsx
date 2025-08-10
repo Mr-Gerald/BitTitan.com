@@ -1,5 +1,4 @@
 
-
 import React, { createContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import { User, Transaction, ActiveInvestment, WithdrawalRequest, LiveChatSession, LiveChatMessage, ContactMessage, VerificationData, Notification, Page, DepositRequest } from '../../types';
 import { GERALD_USER, ADMIN_USER, generateNewUser, generateDefaultAccount } from '../../constants';
@@ -13,7 +12,6 @@ interface AuthContextType {
     login: (name: string, pass: string) => { success: boolean; error?: string };
     logout: () => void;
     signup: (fullName: string, name: string, email: string, pass: string, country: string, dateOfBirth: string, phone: string) => Promise<{ success: boolean; error?: string }>;
-    verifyEmail: (token: string) => { success: boolean };
     createDefaultAccount: (details: { fullName: string; name: string; email: string; phone: string; dateOfBirth: string; password?: string; avatarUrl: string; address?: string; }) => boolean;
     updateUserBalance: (userId: number, asset: 'BTC' | 'USDT' | 'ETH', amount: number, type: Transaction['type'], description: string) => void;
     addTransaction: (userId: number, transaction: Omit<Transaction, 'id' | 'date'> & { id?: string }) => void;
@@ -180,10 +178,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const login = (name: string, pass: string): { success: boolean; error?: string } => {
         const foundUser = allUsers.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === pass);
         if (foundUser) {
-            if (!foundUser.isEmailVerified) {
-                return { success: false, error: "Please verify your email before logging in." };
-            }
-
+            // Login is now allowed immediately after signup.
             const today = getTodayDateString();
             
             if (foundUser.lastLoginDate !== today) {
@@ -201,7 +196,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setWasJustLoggedIn(true);
             return { success: true };
         }
-        return { success: false, error: "Invalid username or password." };
+        return { success: false, error: "invalid_credentials" };
     };
 
     const checkAndResetLoginFlag = useCallback(() => {
@@ -222,58 +217,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         const newUser = generateNewUser(allUsers.length + 1, fullName, name, email, country, dateOfBirth, phone, pass);
+        setAllUsers(prev => [...prev, newUser]);
         
-        try {
-            const verificationLink = `${window.location.origin}?verifyToken=${newUser.emailVerificationToken}`;
-            const response = await fetch('/api/send-welcome-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: newUser.email,
-                    name: newUser.fullName,
-                    verificationLink: verificationLink,
-                })
-            });
-
-            if (!response.ok) {
-                let errorMessage = "An unexpected error occurred. Please contact support.";
-                 try {
-                    // Try to parse a specific error message from the API response
-                    const errorData = await response.json();
-                    errorMessage = errorData.error || errorData.message || JSON.stringify(errorData);
-                } catch (e) {
-                    // If the response isn't JSON, it might be plain text or an HTML error page.
-                    const textError = await response.text();
-                    // Avoid showing a whole HTML page as an error.
-                    errorMessage = textError.length > 300 ? "The server returned an unexpected error." : textError;
-                }
-                console.error("Failed to send verification email. Server response:", errorMessage);
-                // Return a user-friendly but detailed error
-                return { success: false, error: `Could not send verification email. Reason: ${errorMessage}` };
-            }
-    
-            // IMPORTANT: Only add the user to state *after* the email was successfully sent.
-            setAllUsers(prev => [...prev, newUser]);
-
-        } catch (error: any) {
-             console.error("Network error calling email API:", error);
-             return { success: false, error: "A network error occurred. Please check your connection and try again."};
-        }
+        // Fire-and-forget the welcome email API call
+        fetch('/api/send-welcome-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: newUser.email, fullName: newUser.fullName }),
+        }).then(response => {
+             if (response.ok) {
+                 console.log(`Welcome email sent to ${newUser.email}`);
+                 // Mark that the welcome email has been sent
+                 setAllUsers(prevUsers => updateUserInState(prevUsers, newUser.id, u => ({
+                    ...u,
+                    welcomeEmailSent: true,
+                })));
+             } else {
+                 console.error(`Failed to send welcome email to ${newUser.email}`);
+             }
+        }).catch(err => {
+            console.error('Error calling send-welcome-email API:', err);
+        });
 
         return { success: true };
-    };
-
-    const verifyEmail = (token: string): { success: boolean } => {
-        const userToVerify = allUsers.find(u => u.emailVerificationToken === token);
-        if (userToVerify && !userToVerify.isEmailVerified) {
-            setAllUsers(prevUsers => updateUserInState(prevUsers, userToVerify.id, u => ({
-                ...u,
-                isEmailVerified: true,
-                emailVerificationToken: '',
-            })));
-            return { success: true };
-        }
-        return { success: false };
     };
 
     const createDefaultAccount = (details: { fullName: string; name: string; email: string; phone: string; dateOfBirth: string; password?: string; avatarUrl: string; address?: string; }): boolean => {
@@ -571,7 +537,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         login,
         logout,
         signup,
-        verifyEmail,
         createDefaultAccount,
         updateUserBalance,
         addTransaction,

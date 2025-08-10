@@ -118,6 +118,7 @@ export const GERALD_USER: User = {
     notifications: [],
     is2FAEnabled: false,
     isEmailVerified: true,
+    welcomeEmailSent: true,
     emailVerificationToken: '',
 };
 
@@ -141,6 +142,7 @@ export const ADMIN_USER: User = {
     notifications: [],
     is2FAEnabled: true,
     isEmailVerified: true,
+    welcomeEmailSent: true,
     emailVerificationToken: '',
 };
 
@@ -165,8 +167,9 @@ export const generateNewUser = (id: number, fullName: string, name: string, emai
     verificationStatus: 'Not Verified',
     notifications: [],
     is2FAEnabled: false,
-    isEmailVerified: false,
-    emailVerificationToken: crypto.randomUUID(),
+    isEmailVerified: false, // Deprecated
+    welcomeEmailSent: false,
+    emailVerificationToken: crypto.randomUUID(), // Kept for potential future use, but not for login gating
 });
 
 export const generateDefaultAccount = (id: number, details: { fullName: string; name: string; email: string; phone: string; dateOfBirth: string; password?: string; avatarUrl: string; address?: string; }): User => ({
@@ -192,6 +195,7 @@ export const generateDefaultAccount = (id: number, details: { fullName: string; 
     notifications: [],
     is2FAEnabled: false,
     isEmailVerified: true,
+    welcomeEmailSent: true,
     emailVerificationToken: '',
 });
 

@@ -127,6 +127,9 @@ export interface User {
     verificationData?: VerificationData;
     notifications: Notification[];
     is2FAEnabled: boolean;
+    isEmailVerified: boolean; // Deprecated, use welcomeEmailSent
+    welcomeEmailSent: boolean;
+    emailVerificationToken: string; // Deprecated
 }
 
 export interface CandlestickData {
@@ -187,7 +190,7 @@ export interface LiveChatMessage {
 
 export interface LiveChatSession {
     userId: number;
-    userName: string;
+    userName:string;
     messages: LiveChatMessage[];
     hasUnreadAdminMessage: boolean; // For user notification
     hasUnreadUserMessage: boolean; // For admin notification

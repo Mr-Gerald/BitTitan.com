@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { AuthContext } from './AuthContext';
 import Icon from '../shared/Icon';
-import { LOGO_ICON, CLOSE_ICON, COUNTRIES, EMAIL_ICON } from '../../constants';
+import { LOGO_ICON, CLOSE_ICON, COUNTRIES } from '../../constants';
 
 interface LoginPageProps {
     isLoginDefault: boolean;
@@ -10,22 +10,34 @@ interface LoginPageProps {
     onSwitchToLogin: () => void;
 }
 
-const EmailVerificationPending: React.FC<{ email: string, onClose: () => void }> = ({ email, onClose }) => {
+const SignupStatusFeedback: React.FC<{
+    status: 'loading' | 'success';
+    onProceed: () => void;
+}> = ({ status, onProceed }) => {
     return (
-        <div className="text-center">
-            <Icon className="w-16 h-16 text-accent-primary mx-auto">{EMAIL_ICON}</Icon>
-            <h2 className="mt-4 text-2xl font-extrabold text-white">Verify Your Email</h2>
-            <p className="mt-2 text-basetitan-text-secondary">
-                We've sent a verification link to <strong className="text-white">{email}</strong>.
-                Please check your inbox and click the link to activate your account.
-            </p>
-            <div className="mt-6">
-                 <button 
-                    onClick={onClose}
-                    className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary-hover">
-                    Got it, I'll check my email
-                </button>
-            </div>
+        <div className="text-center p-8">
+            {status === 'loading' ? (
+                <>
+                    <div className="w-16 h-16 mx-auto border-4 border-accent-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+                    <h2 className="text-2xl font-bold text-white">Creating Your Account...</h2>
+                    <p className="text-basetitan-text-secondary mt-2">Please wait while we set things up.</p>
+                </>
+            ) : (
+                <>
+                    <div className="w-16 h-16 mx-auto bg-accent-secondary rounded-full flex items-center justify-center mb-4 animate-fade-in-up">
+                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    <h2 className="text-2xl font-bold text-white">Account Created Successfully!</h2>
+                    <p className="text-basetitan-text-secondary mt-2">You can now log in with your new credentials.</p>
+                    <div className="mt-6">
+                        <button 
+                            onClick={onProceed}
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary-hover">
+                            Proceed to Login
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
     );
 };
@@ -33,13 +45,12 @@ const EmailVerificationPending: React.FC<{ email: string, onClose: () => void }>
 
 const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitchToSignup, onSwitchToLogin }) => {
     const [isLoginView, setIsLoginView] = useState(isLoginDefault);
-    const [signupSuccess, setSignupSuccess] = useState(false);
+    const [signupStatus, setSignupStatus] = useState<'form' | 'loading' | 'success'>('form');
     
     // Shared state
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
     
     // Signup-specific state
     const [fullName, setFullName] = useState('');
@@ -68,57 +79,55 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
         setConfirmPassword('');
         setTermsAccepted(false);
         setError('');
-        setIsLoading(false);
+        setSignupStatus('form');
     }
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleLogin = async () => {
+        const result = auth?.login(username, password);
+        if (!result?.success) {
+            setError('Invalid username or password.');
+        }
+        // On success, the modal will be closed by the App component's useEffect
+    };
+
+    const handleSignup = async () => {
+        if (!fullName || !username || !email || !password || !country || !dateOfBirth || !phone) {
+            setError('All fields are required.');
+            return;
+        }
+        if (password !== confirmPassword) {
+            setError('Passwords do not match.');
+            return;
+        }
+         if (!termsAccepted) {
+            setError('You must accept the terms and conditions.');
+            return;
+        }
+
+        setSignupStatus('loading');
+
+        if (auth?.signup) {
+            // Simulate network delay for better UX
+            setTimeout(async () => {
+                const result = await auth.signup(fullName, username, email, password, country, dateOfBirth, phone);
+                if(result.success) {
+                    setSignupStatus('success');
+                } else {
+                    setError(result.error || 'An unexpected error occurred.');
+                    setSignupStatus('form');
+                }
+            }, 1500);
+        }
+    };
+
+
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (isLoading) return;
         setError('');
-        setIsLoading(true);
-
-        try {
-            if (isLoginView) {
-                const result = auth?.login(username, password);
-                if (!result?.success) {
-                    setError(result?.error || 'Invalid username or password.');
-                }
-                // On success, the App component handles modal closure.
-            } else {
-                // Signup logic
-                if (!fullName || !username || !email || !password || !country || !dateOfBirth || !phone) {
-                    setError('All fields are required.');
-                    return;
-                }
-                if (password !== confirmPassword) {
-                    setError('Passwords do not match.');
-                    return;
-                }
-                if (!termsAccepted) {
-                    setError('You must accept the terms and conditions.');
-                    return;
-                }
-
-                if (auth?.signup) {
-                    const result = await auth.signup(fullName, username, email, password, country, dateOfBirth, phone);
-                    if (result.success) {
-                        setSignupSuccess(true);
-                        // isLoading remains true to keep button disabled while we show success screen
-                        return; 
-                    } else {
-                        setError(result.error || 'An unexpected error occurred.');
-                    }
-                }
-            }
-        } catch (err: any) {
-            console.error("Form submission error:", err);
-            setError("A network error occurred. Please check your connection.");
-        } finally {
-             // Only stop loading if signup was not successful.
-             // If it was successful, the component will unmount or change view.
-            if (!signupSuccess) {
-                 setIsLoading(false);
-            }
+        if (isLoginView) {
+           handleLogin();
+        } else {
+           handleSignup();
         }
     };
 
@@ -131,12 +140,17 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
         }
     }
 
-    if (signupSuccess) {
+    const handleProceedToLogin = () => {
+        clearFormState();
+        onSwitchToLogin();
+    }
+
+    if (!isLoginView && signupStatus !== 'form') {
         return (
-            <div className="relative w-full max-w-md p-6 md:p-8 space-y-6 bg-basetitan-light rounded-xl shadow-2xl animate-fade-in-up">
-                <EmailVerificationPending email={email} onClose={onClose} />
-            </div>
-        );
+             <div className="relative w-full max-w-md p-6 md:p-8 space-y-6 bg-basetitan-light rounded-xl shadow-2xl animate-fade-in-up">
+                <SignupStatusFeedback status={signupStatus} onProceed={handleProceedToLogin} />
+             </div>
+        )
     }
 
 
@@ -223,16 +237,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ isLoginDefault, onClose, onSwitch
                 {error && <p className="text-sm text-accent-danger text-center">{error}</p>}
                 <div>
                     <button type="submit"
-                        disabled={(!isLoginView && !termsAccepted) || isLoading}
+                        disabled={!isLoginView && !termsAccepted}
                         className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-accent-primary hover:bg-accent-primary-hover focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-basetitan-light focus:ring-accent-primary disabled:bg-gray-500 disabled:cursor-not-allowed">
-                        {isLoading ? (
-                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        ) : (
-                            isLoginView ? 'Sign In' : 'Sign Up'
-                        )}
+                        {isLoginView ? 'Sign In' : 'Sign Up'}
                     </button>
                 </div>
             </form>
