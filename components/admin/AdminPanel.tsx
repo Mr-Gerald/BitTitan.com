@@ -1,8 +1,9 @@
 
+
 import React, { useContext, useState, useMemo, useRef, useEffect } from 'react';
 import Card from '../shared/Card';
 import { AuthContext } from '../auth/AuthContext';
-import { User, ActiveInvestment, WithdrawalRequest, LiveChatSession, DepositRequest, Page } from '../../types';
+import { User, ActiveInvestment, WithdrawalRequest, LiveChatSession, DepositRequest, Page, LiveChatMessage } from '../../types';
 import SendFundsModal from './SendFundsModal';
 import Icon from '../shared/Icon';
 import { SUPPORT_ICON, TRASH_ICON, EMAIL_ICON, LOGO_ICON } from '../../constants';
@@ -118,6 +119,12 @@ const AdminPanel: React.FC = () => {
             setDeletingUser(null);
         }
     };
+    
+    const lastMessage = useMemo(() => {
+        if (!selectedChat || selectedChat.messages.length === 0) return null;
+        return selectedChat.messages[selectedChat.messages.length - 1];
+    }, [selectedChat]);
+
 
     useEffect(() => {
         chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -277,7 +284,28 @@ const AdminPanel: React.FC = () => {
                     </div>
                     <div className="md:col-span-2 flex flex-col bg-basetitan-dark rounded-lg">
                         {selectedChat ? (
-                            <><div className="flex-1 p-4 overflow-y-auto space-y-4">{selectedChat.messages.map((msg, index) => (<div key={index} className={`flex items-start gap-3 ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>{msg.sender === 'user' && <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center flex-shrink-0 font-bold">{selectedChat.userName[0]}</div>}<div className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${msg.sender === 'admin' ? 'bg-accent-primary text-white rounded-br-none' : 'bg-basetitan-dark text-basetitan-text rounded-bl-none'}`}><p className="text-sm whitespace-pre-wrap">{msg.text}</p></div></div>))}<div ref={chatMessagesEndRef} /></div><div className="p-4 border-t border-basetitan-border flex items-center space-x-2"><input type="text" value={adminReply} onChange={(e) => setAdminReply(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendReply()} placeholder={`Reply to ${selectedChat.userName}...`} className="flex-1 bg-basetitan-light border border-basetitan-border rounded-lg px-4 py-2 focus:ring-accent-primary focus:border-accent-primary" /><button onClick={handleSendReply} disabled={!adminReply.trim()} className="bg-accent-primary text-white rounded-lg p-2 disabled:opacity-50 hover:bg-accent-primary-hover">Send</button></div></>
+                            <>
+                                <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                                    {selectedChat.messages.map((msg: LiveChatMessage, index: number) => (
+                                        <div key={index} className={`flex items-start gap-3 ${msg.sender === 'admin' ? 'justify-end' : 'justify-start'}`}>
+                                            {msg.sender === 'user' && <div className="w-8 h-8 rounded-full bg-gray-500 flex items-center justify-center flex-shrink-0 font-bold">{selectedChat.userName[0]}</div>}
+                                            <div className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${msg.sender === 'admin' ? 'bg-accent-primary text-white rounded-br-none' : 'bg-basetitan-dark text-basetitan-text rounded-bl-none'}`}>
+                                                <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {lastMessage?.sender === 'admin' && !selectedChat?.hasUnreadAdminMessage && (
+                                        <div className="flex justify-end pr-4">
+                                            <span className="text-xs text-basetitan-text-secondary">Seen by user</span>
+                                        </div>
+                                    )}
+                                    <div ref={chatMessagesEndRef} />
+                                </div>
+                                <div className="p-4 border-t border-basetitan-border flex items-center space-x-2">
+                                    <input type="text" value={adminReply} onChange={(e) => setAdminReply(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSendReply()} placeholder={`Reply to ${selectedChat.userName}...`} className="flex-1 bg-basetitan-light border border-basetitan-border rounded-lg px-4 py-2 focus:ring-accent-primary focus:border-accent-primary" />
+                                    <button onClick={handleSendReply} disabled={!adminReply.trim()} className="bg-accent-primary text-white rounded-lg p-2 disabled:opacity-50 hover:bg-accent-primary-hover">Send</button>
+                                </div>
+                            </>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-center text-basetitan-text-secondary"><div><Icon className="w-16 h-16 mx-auto">{SUPPORT_ICON}</Icon><p className="mt-2">Select a session to view the chat.</p></div></div>
                         )}

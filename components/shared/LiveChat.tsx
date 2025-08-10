@@ -1,7 +1,10 @@
-import React, { useState, useRef, useEffect, useContext } from 'react';
+
+import React, { useState, useRef, useEffect, useContext, useMemo } from 'react';
 import { AuthContext } from '../auth/AuthContext';
 import Icon from './Icon';
 import { CLOSE_ICON, SUPPORT_ICON } from '../../constants';
+import { LiveChatMessage } from '../../types';
+
 
 interface LiveChatProps {
     onClose: () => void;
@@ -19,6 +22,12 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
+
+    const lastMessage = useMemo(() => {
+        if (!messages || messages.length === 0) return null;
+        const filteredMessages = messages.filter(msg => msg.text.trim() !== '');
+        return filteredMessages.length > 0 ? filteredMessages[filteredMessages.length - 1] : null;
+    }, [messages]);
 
     useEffect(() => {
         // Automatically create session if it doesn't exist when component mounts
@@ -57,7 +66,7 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
             </header>
 
             <main className="flex-1 p-4 overflow-y-auto space-y-4">
-                {messages.filter(msg => msg.text.trim() !== '').map((msg, index) => (
+                {messages.filter(msg => msg.text.trim() !== '').map((msg: LiveChatMessage, index: number) => (
                     <div key={index} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                         {msg.sender === 'admin' && <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0"><Icon className="w-5 h-5 text-white">{SUPPORT_ICON}</Icon></div>}
                         <div className={`max-w-xs md:max-w-md px-4 py-2 rounded-2xl ${msg.sender === 'user' ? 'bg-accent-primary text-white rounded-br-none' : 'bg-basetitan-dark text-basetitan-text rounded-bl-none'}`}>
@@ -67,6 +76,11 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
                          {msg.sender === 'user' && !user?.avatarUrl && <div className="w-8 h-8 rounded-full bg-accent-primary flex items-center justify-center flex-shrink-0 font-bold text-white text-sm"><span>{user?.name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()}</span></div> }
                     </div>
                 ))}
+                {lastMessage?.sender === 'user' && !session?.hasUnreadUserMessage && (
+                    <div className="flex justify-end pr-12">
+                        <span className="text-xs text-basetitan-text-secondary">Seen</span>
+                    </div>
+                )}
                 <div ref={messagesEndRef} />
             </main>
 

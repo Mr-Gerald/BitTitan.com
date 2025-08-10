@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import Card from '../shared/Card';
 import { VerificationData } from '../../types';
@@ -58,7 +59,7 @@ const Step2IDDocument: React.FC<Step2Props> = ({ nextStep, prevStep, formData })
         return (
             <div className="w-full p-4 border-2 border-dashed border-basetitan-border rounded-lg text-center">
                 {imageSrc ? (
-                    <img src={imageSrc} alt={`${side} of ID`} className="w-full h-40 object-contain rounded-md" />
+                    <img key={imageSrc} src={imageSrc} alt={`${side} of ID`} className="w-full h-40 object-contain rounded-md" />
                 ) : (
                     <div className="h-40 flex items-center justify-center text-basetitan-text-secondary">Upload {side} view</div>
                 )}

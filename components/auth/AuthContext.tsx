@@ -84,50 +84,54 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const hasHydrated = useRef(false);
-    const saveTimeoutRef = useRef<number | null>(null);
+    const debouncedSaveRef = useRef<number | null>(null);
     
-    // Explicit, debounced save function for reliability
-    const saveState = useCallback(() => {
-        if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
+    // A robust, unified save function. Critical actions can call it with `immediate = true`.
+    const triggerSave = useCallback((immediate = false) => {
+        if (debouncedSaveRef.current) {
+            clearTimeout(debouncedSaveRef.current);
         }
-        
-        saveTimeoutRef.current = window.setTimeout(() => {
+
+        const saveAction = () => {
             if (!hasHydrated.current) return;
             
-            console.log("Persisting state via API...");
-            // Use a function form of setters to get the absolute latest state
+            console.log(`Persisting state via API (${immediate ? 'immediate' : 'debounced'})...`);
+
+            // Use functional updates to get the latest state at the moment of saving.
+            // This is crucial for reliability and preventing race conditions.
             setAllUsers(currentUsers => {
-                setWithdrawalRequests(currentWithdrawals => {
-                    setDepositRequests(currentDeposits => {
-                        setLiveChatSessions(currentChats => {
-                            setContactMessages(currentContacts => {
-                                const stateToPersist = {
-                                    allUsers: currentUsers,
-                                    withdrawalRequests: currentWithdrawals,
-                                    depositRequests: currentDeposits,
-                                    liveChatSessions: currentChats,
-                                    contactMessages: currentContacts,
-                                };
-                                fetch('/api/save-state', {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify(stateToPersist),
-                                }).then(response => {
-                                    if (!response.ok) console.error("Failed to persist state:", response.statusText);
-                                    else console.log("State persisted successfully.");
-                                }).catch(err => console.error("Error persisting state:", err));
-                                return currentContacts;
-                            });
-                            return currentChats;
-                        });
-                        return currentDeposits;
-                    });
-                    return currentWithdrawals;
-                });
-                return currentUsers;
+            setWithdrawalRequests(currentWithdrawals => {
+            setDepositRequests(currentDeposits => {
+            setLiveChatSessions(currentChats => {
+            setContactMessages(currentContacts => {
+                const stateToPersist = {
+                    allUsers: currentUsers,
+                    withdrawalRequests: currentWithdrawals,
+                    depositRequests: currentDeposits,
+                    liveChatSessions: currentChats,
+                    contactMessages: currentContacts,
+                };
+                
+                fetch('/api/save-state', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(stateToPersist),
+                }).then(response => {
+                    if (!response.ok) console.error("Failed to persist state:", response.statusText);
+                    else console.log("State persisted successfully.");
+                }).catch(err => console.error("Error persisting state:", err));
+
+                return currentContacts;
+            }); return currentChats; }); return currentDeposits; }); return currentWithdrawals; });
+            return currentUsers;
             });
-        }, 1500);
+        };
+        
+        if (immediate) {
+            saveAction();
+        } else {
+            debouncedSaveRef.current = window.setTimeout(saveAction, 1500);
+        }
     }, []);
 
     // Initial data hydration from our secure API endpoint and local session
@@ -204,16 +208,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setAllUsers(prevUsers => {
                 const today = getTodayDateString();
                 if (foundUser.lastLoginDate !== today) {
-                    return updateUserInState(prevUsers, foundUser.id, user => {
+                    const updatedUsers = updateUserInState(prevUsers, foundUser.id, user => {
                         const yesterday = new Date();
                         yesterday.setDate(yesterday.getDate() - 1);
                         const newStreak = user.lastLoginDate === yesterday.toISOString().split('T')[0] ? user.loginStreak + 1 : 1;
                         return { ...user, lastLoginDate: today, loginStreak: newStreak };
                     });
+                     triggerSave(); // Debounced save is fine here
+                    return updatedUsers;
                 }
                 return prevUsers;
             });
-            saveState();
             setCurrentUserId(foundUser.id);
             localStorage.setItem('bittitan_userId', foundUser.id.toString());
             setActivePage(Page.Dashboard);
@@ -249,11 +254,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         
         setAllUsers(prev => [...prev, newUser]);
-        saveState();
+        triggerSave(true); // Immediate save for new user
         
-        // Automated email sending is now decoupled. This function just saves the user.
-        // A manual mailto: option will be available in the admin panel.
-
         return { success: true };
     };
 
@@ -263,7 +265,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
         const newUser = generateDefaultAccount(Date.now(), details);
         setAllUsers(prev => [...prev, newUser]);
-        saveState();
+        triggerSave(true); // Immediate save
         return true;
     };
     
@@ -272,8 +274,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const newTransaction: Transaction = { ...transaction, id: transaction.id || `tx${Date.now()}`, date: getTodayDateString() };
             return { ...user, transactions: [newTransaction, ...user.transactions] };
         }));
-        saveState();
-    }, [saveState]);
+        // No save here; called by other functions that will save.
+    }, []);
     
     const updateUserBalance = useCallback((userId: number, asset: 'BTC' | 'USDT' | 'ETH', amount: number, type: Transaction['type'], description: string) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
@@ -287,16 +289,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 transactions: [newTransaction, ...user.transactions],
             };
         }));
-        saveState();
-    }, [saveState]);
+        triggerSave(true); // Balance changes are critical
+    }, [triggerSave]);
 
     const addInvestment = useCallback((userId: number, investment: Omit<ActiveInvestment, 'id'>) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
              const newInvestment: ActiveInvestment = { ...investment, id: `inv${Date.now()}` };
             return { ...user, activeInvestments: [newInvestment, ...user.activeInvestments] };
         }));
-        saveState();
-    }, [saveState]);
+        triggerSave(true); // Investment is a critical action
+    }, [triggerSave]);
     
     const approveInvestment = useCallback((userId: number, investmentId: string) => {
         const user = allUsers.find(u => u.id === userId);
@@ -309,28 +311,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, u => ({
             ...u, activeInvestments: u.activeInvestments.map(inv => inv.id === investmentId ? { ...inv, status: 'Completed' } : inv),
         })));
-        saveState();
-    }, [allUsers, updateUserBalance, saveState]);
+        triggerSave(true);
+    }, [allUsers, updateUserBalance, triggerSave]);
 
     const updateUserProfile = useCallback((userId: number, profileData: Partial<Pick<User, 'name' | 'avatarUrl' | 'phone' | 'country' | 'bio'>>) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({ ...user, ...profileData })));
-        saveState();
-    }, [saveState]);
+        triggerSave();
+    }, [triggerSave]);
 
     const addNotification = useCallback((userId: number, message: string, title?: string, link?: Page) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => {
             const newNotification: Notification = { id: `notif-${Date.now()}`, title, message, link, read: false, date: getISODateString() };
             return { ...user, notifications: [newNotification, ...user.notifications] };
         }));
-        saveState();
-    }, [saveState]);
+        triggerSave();
+    }, [triggerSave]);
     
     const submitWithdrawalRequest = useCallback((request: Omit<WithdrawalRequest, 'id' | 'date' | 'status'>) => {
         const newRequest: WithdrawalRequest = { ...request, id: `wd-${Date.now()}`, date: getTodayDateString(), status: 'Pending' };
         setWithdrawalRequests(prev => [newRequest, ...prev]);
         addTransaction(request.userId, { id: newRequest.id, type: 'Withdrawal', asset: request.asset, amount: request.amount, description: `Request to ${request.address}`, status: 'Pending' });
-        saveState();
-    }, [addTransaction, saveState]);
+        triggerSave(true);
+    }, [addTransaction, triggerSave]);
 
     const approveWithdrawal = useCallback((requestId: string) => {
         const request = withdrawalRequests.find(r => r.id === requestId);
@@ -342,8 +344,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         })));
         setWithdrawalRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Approved' } : r));
         addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} has been approved.`, "Withdrawal Approved");
-        saveState();
-    }, [withdrawalRequests, addNotification, saveState]);
+        triggerSave(true);
+    }, [withdrawalRequests, addNotification, triggerSave]);
 
     const rejectWithdrawal = useCallback((requestId: string) => {
         const request = withdrawalRequests.find(r => r.id === requestId);
@@ -353,8 +355,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         })));
         setWithdrawalRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Rejected' } : r));
         addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} was rejected. Please contact support.`, "Withdrawal Rejected");
-        saveState();
-    }, [withdrawalRequests, addNotification, saveState]);
+        triggerSave(true);
+    }, [withdrawalRequests, addNotification, triggerSave]);
 
     const sendLiveChatMessage = useCallback((userId: number, text: string) => {
         const newMessage: LiveChatMessage = { sender: 'user', text, timestamp: Date.now() };
@@ -367,35 +369,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
              }
              return [...prev, { userId, userName: user.name, messages: [{ sender: 'admin', text: `Hi ${user.name}! How can we help you today?`, timestamp: Date.now() }, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: true }];
         });
-        saveState();
-    }, [allUsers, saveState]);
+        triggerSave(true);
+    }, [allUsers, triggerSave]);
 
     const sendAdminReply = useCallback((userId: number, text: string) => {
         const newMessage: LiveChatMessage = { sender: 'admin', text, timestamp: Date.now() };
         setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, messages: [...s.messages, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: false } : s));
-        saveState();
-    }, [saveState]);
+        triggerSave(true);
+    }, [triggerSave]);
 
     const markUserChatAsRead = useCallback((userId: number) => {
          setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, hasUnreadAdminMessage: false } : s));
-         saveState();
-    }, [saveState]);
+         triggerSave();
+    }, [triggerSave]);
     
     const markAdminChatAsRead = useCallback((userId: number) => {
          setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, hasUnreadUserMessage: false } : s));
-         saveState();
-    }, [saveState]);
+         triggerSave();
+    }, [triggerSave]);
     
     const submitContactMessage = useCallback((name: string, email: string, message: string) => {
         const newMessage: ContactMessage = { id: `cm-${Date.now()}`, name, email, message, date: getISODateString(), read: false };
         setContactMessages(prev => [newMessage, ...prev]);
-        saveState();
-    }, [saveState]);
+        triggerSave(true);
+    }, [triggerSave]);
 
     const markContactMessageAsRead = useCallback((id: string) => {
         setContactMessages(prev => prev.map(msg => msg.id === id ? { ...msg, read: true } : msg));
-        saveState();
-    }, [saveState]);
+        triggerSave();
+    }, [triggerSave]);
 
     const sendAdminMessage = useCallback((userId: number, message: string) => {
         addNotification(userId, message);
@@ -406,38 +408,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             ...user, verificationStatus: 'Pending', verificationData: data,
         })));
         addNotification(userId, 'Your verification documents have been submitted and are now pending review.', 'Verification Pending', Page.Account);
-        saveState();
-    }, [addNotification, saveState]);
+        triggerSave(true);
+    }, [addNotification, triggerSave]);
 
     const approveVerification = useCallback((userId: number) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
             ...user, verificationStatus: 'Verified', verificationData: undefined,
         })));
         addNotification(userId, 'Congratulations! Your account has been verified.', 'Verification Approved');
-        saveState();
-    }, [addNotification, saveState]);
+        triggerSave(true);
+    }, [addNotification, triggerSave]);
     
     const rejectVerification = useCallback((userId: number, reason: string) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
             ...user, verificationStatus: 'Rejected', verificationData: undefined,
         })));
         addNotification(userId, `Your verification was rejected. Reason: ${reason}.`, 'Verification Rejected', Page.Verification);
-        saveState();
-    }, [addNotification, saveState]);
+        triggerSave(true);
+    }, [addNotification, triggerSave]);
     
     const markNotificationAsRead = useCallback((userId: number, notificationId: string) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
             ...user, notifications: user.notifications.map(n => n.id === notificationId ? { ...n, read: true } : n)
         })));
-        saveState();
-    }, [saveState]);
+        triggerSave();
+    }, [triggerSave]);
     
     const deleteNotification = useCallback((userId: number, notificationId: string) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
             ...user, notifications: user.notifications.filter(n => n.id !== notificationId)
         })));
-        saveState();
-    }, [saveState]);
+        triggerSave();
+    }, [triggerSave]);
 
     const changePassword = useCallback((userId: number, currentPass: string, newPass: string): { success: boolean, message: string } => {
         let result = { success: false, message: "Current password is not correct." };
@@ -447,9 +449,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             result = { success: true, message: "Password changed successfully." };
             return updateUserInState(prevUsers, userId, u => ({ ...u, password: newPass }));
         });
-        if (result.success) saveState();
+        if (result.success) triggerSave(true);
         return result;
-    }, [saveState]);
+    }, [triggerSave]);
     
     const toggle2FA = useCallback((userId: number, code?: string): { success: boolean, message: string } => {
         let result = { success: false, message: "User not found." };
@@ -464,20 +466,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             result = { success: true, message: `2FA ${isEnabling ? 'enabled' : 'disabled'} successfully.` };
             return updateUserInState(prevUsers, userId, u => ({ ...u, is2FAEnabled: isEnabling }));
         });
-        if (result.success) saveState();
+        if (result.success) triggerSave(true);
         return result;
-    }, [saveState]);
+    }, [triggerSave]);
 
     const deleteAccount = useCallback((userId: number) => {
         setAllUsers(prev => prev.filter(u => u.id !== userId));
         if (currentUserId === userId) logout();
-        saveState();
-    }, [currentUserId, logout, saveState]);
+        triggerSave(true);
+    }, [currentUserId, logout, triggerSave]);
 
     const adminDeleteUser = useCallback((userId: number) => {
         setAllUsers(prev => prev.filter(u => u.id !== userId));
-        saveState();
-    }, [saveState]);
+        triggerSave(true);
+    }, [triggerSave]);
 
     const submitDepositRequest = useCallback((request: Omit<DepositRequest, 'id' | 'date' | 'status' | 'userName'>) => {
         const user = allUsers.find(u => u.id === request.userId);
@@ -486,8 +488,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setDepositRequests(prev => [newRequest, ...prev]);
         addTransaction(request.userId, { id: newRequest.id, type: 'Deposit', asset: request.asset, amount: request.amount, description: 'Crypto deposit review', status: 'Pending' });
         addNotification(request.userId, `Your deposit of ${request.amount} ${request.asset} is pending review.`, "Deposit Request Submitted");
-        saveState();
-    }, [allUsers, addTransaction, addNotification, saveState]);
+        triggerSave(true);
+    }, [allUsers, addTransaction, addNotification, triggerSave]);
 
     const approveDeposit = useCallback((requestId: string) => {
         const request = depositRequests.find(r => r.id === requestId);
@@ -499,8 +501,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         })));
         setDepositRequests(prev => prev.map(r => r.id === requestId ? { ...r, status: 'Approved' } : r));
         addNotification(request.userId, `Your deposit of ${request.amount} ${request.asset} has been approved.`, "Deposit Approved");
-        saveState();
-    }, [depositRequests, addNotification, saveState]);
+        triggerSave(true);
+    }, [depositRequests, addNotification, triggerSave]);
     
     const rejectDeposit = useCallback((requestId: string, reason: string) => {
         const request = depositRequests.find(r => r.id === requestId);
@@ -510,15 +512,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             ...u, transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Rejected' } : tx)
         })));
         addNotification(request.userId, `Your deposit was rejected. Reason: ${reason}`, "Deposit Rejected");
-        saveState();
-    }, [depositRequests, addNotification, saveState]);
+        triggerSave(true);
+    }, [depositRequests, addNotification, triggerSave]);
     
     const markWelcomeEmailSent = useCallback((userId: number) => {
         setAllUsers(prevUsers => updateUserInState(prevUsers, userId, user => ({
             ...user, welcomeEmailSent: true
         })));
-        saveState();
-    }, [saveState]);
+        triggerSave();
+    }, [triggerSave]);
 
     const value = useMemo(() => ({
         user: currentUser, users: allUsers, withdrawalRequests, depositRequests, isLoading, login, logout, signup, createDefaultAccount, updateUserBalance,

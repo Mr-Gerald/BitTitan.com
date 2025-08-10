@@ -1,4 +1,5 @@
 
+
 import React, { useState, useContext, useEffect } from 'react';
 import { Page } from '../types';
 import { HOME_ICON, TRADE_ICON, INVEST_ICON, WALLET_ICON, ACCOUNT_ICON, LOGO_ICON, LOGOUT_ICON, MENU_ICON, CLOSE_ICON, AI_ICON, ADMIN_ICON, PORTFOLIO_ICON, ALT_INVEST_ICON, HISTORY_ICON, LOGIN_STREAK_ICON, SUPPORT_ICON, NOTIFICATION_ICON } from '../constants';
@@ -33,7 +34,7 @@ const MainLayout: React.FC = () => {
         // Smart polling for real-time updates
         const intervalId = setInterval(() => {
             auth.refreshStateFromServer();
-        }, 5000); // Poll every 5 seconds
+        }, 2000); // Poll every 2 seconds for faster updates
 
         return () => clearInterval(intervalId);
     }, [auth]);
@@ -208,7 +209,7 @@ const MainLayout: React.FC = () => {
                 </header>
 
                 {/* Main Content */}
-                <main className="flex-1 overflow-y-auto bg-basetitan-dark pb-24 lg:pb-0">
+                <main className="flex-1 overflow-y-auto bg-basetitan-dark pb-32 lg:pb-0">
                     {renderPage()}
                 </main>
                 
@@ -229,7 +230,7 @@ const MainLayout: React.FC = () => {
             </div>
 
             {isLiveChatOpen && (
-                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-20 w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
+                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-50 w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
                     <LiveChat onClose={() => setIsLiveChatOpen(false)} />
                 </div>
             )}
@@ -245,7 +246,7 @@ const MainLayout: React.FC = () => {
             </div>
 
             {isAiAssistantOpen && (
-                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-20 w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
+                <div className="fixed inset-0 lg:inset-auto lg:bottom-24 lg:right-6 z-50 w-full lg:w-[440px] h-full lg:h-[600px] lg:rounded-xl overflow-hidden shadow-2xl animate-fade-in-up">
                     <AIAssistant onClose={() => setIsAiAssistantOpen(false)} />
                 </div>
             )}
