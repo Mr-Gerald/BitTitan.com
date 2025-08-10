@@ -1,8 +1,8 @@
 import nodemailer from 'nodemailer';
-import { LOGO_ICON } from '../../constants';
+import { LOGO_ICON } from '../constants';
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'nodejs',
 };
 
 // IMPORTANT: The credentials for the email service are stored as environment variables
