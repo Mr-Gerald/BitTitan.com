@@ -28,18 +28,6 @@ const MainLayout: React.FC = () => {
     const [isLiveChatOpen, setIsLiveChatOpen] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-    useEffect(() => {
-        if (!auth) return;
-        
-        // Smart polling for real-time updates
-        const intervalId = setInterval(() => {
-            auth.refreshStateFromServer();
-        }, 1500); // Poll every 1.5 seconds for faster updates
-
-        return () => clearInterval(intervalId);
-    }, [auth]);
-
-
     if (!auth || !auth.user) return null;
     const { user, logout, activePage, navigateTo } = auth;
     
