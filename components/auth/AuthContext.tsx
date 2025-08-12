@@ -50,6 +50,7 @@ interface AuthContextType {
     navigateTo: (page: Page) => void;
     markWelcomeEmailSent: (userId: number) => void;
     addNotification: (userId: number, message: string, title?: string, link?: Page) => void;
+    refreshStateFromServer: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -83,52 +84,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [error, setError] = useState<string | null>(null);
     
     const hasHydrated = useRef(false);
-    const isPersistingRef = useRef(false);
-    const stateQueueRef = useRef<any>(null);
+    const isSavingRef = useRef(false);
 
-    const persistState = useCallback(async (stateToPersist?: any) => {
-        if (stateToPersist) {
-            stateQueueRef.current = stateToPersist;
-        }
+    const persistState = useCallback(async (stateToPersist: any) => {
+        if (isSavingRef.current || !hasHydrated.current) return;
+        isSavingRef.current = true;
         
-        if (isPersistingRef.current || !stateQueueRef.current || !hasHydrated.current) {
-            return;
-        }
-
-        isPersistingRef.current = true;
-        const state = stateQueueRef.current;
-        stateQueueRef.current = null; 
-
-        console.log(`Persisting state via API (debounced)...`);
+        console.log(`Persisting state via API (immediate)...`);
         try {
             const response = await fetch('/api/save-state', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(state),
+                body: JSON.stringify(stateToPersist),
             });
-
-            if (!response.ok) {
-                 console.error("Failed to persist state:", response.status, await response.text());
-            } else {
-                 console.log("State persisted successfully.");
-            }
+            if (!response.ok) console.error("Failed to persist state:", response.status, await response.text());
+            else console.log("State persisted successfully.");
         } catch (err) {
             console.error("Error persisting state:", err);
         } finally {
-            isPersistingRef.current = false;
-            if (stateQueueRef.current) {
-                persistState();
-            }
+            isSavingRef.current = false;
         }
     }, []);
 
-    // **NEW**: Centralized effect to persist state changes.
-    useEffect(() => {
-        if (!hasHydrated.current || isLoading) {
+    const refreshStateFromServer = useCallback(async () => {
+        if (isSavingRef.current) {
+            console.log("Skipping refresh: a save is in progress.");
             return;
         }
-        const currentState = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
-        persistState(currentState);
+        try {
+            const response = await fetch('/api/get-state');
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.allUsers) {
+                    setAllUsers(data.allUsers);
+                    setWithdrawalRequests(data.withdrawalRequests || []);
+                    setDepositRequests(data.depositRequests || []);
+                    setLiveChatSessions(data.liveChatSessions || []);
+                    setContactMessages(data.contactMessages || []);
+                }
+            }
+        } catch (err) {
+            console.error("Error refreshing state from server:", err);
+        }
+    }, []);
+
+    useEffect(() => {
+        const fullState = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
+        if (hasHydrated.current && !isLoading) {
+            persistState(fullState);
+        }
     }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, persistState, isLoading]);
 
 
@@ -138,23 +142,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setError(null);
             try {
                 const savedUserId = localStorage.getItem('bittitan_userId');
-                const response = await fetch('/api/get-state');
-
-                if (response.status !== 404 && !response.ok) {
-                    throw new Error(`Failed to fetch data: ${response.statusText}`);
-                }
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data && data.allUsers && Array.isArray(data.allUsers)) {
-                        setAllUsers(data.allUsers);
-                        setWithdrawalRequests(data.withdrawalRequests || []);
-                        setDepositRequests(data.depositRequests || []);
-                        setLiveChatSessions(data.liveChatSessions || []);
-                        setContactMessages(data.contactMessages || []);
-                        if (savedUserId && data.allUsers.some((u: User) => u.id === parseInt(savedUserId, 10))) {
-                            setCurrentUserId(parseInt(savedUserId, 10));
-                        }
+                await refreshStateFromServer();
+                const initialDataResponse = await fetch('/api/get-state');
+                if (initialDataResponse.ok) {
+                    const data = await initialDataResponse.json();
+                     if (savedUserId && data.allUsers.some((u: User) => u.id === parseInt(savedUserId, 10))) {
+                        setCurrentUserId(parseInt(savedUserId, 10));
                     }
                 }
             } catch (err: any) {
@@ -166,7 +159,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
         };
         fetchData();
-    }, []);
+    }, [refreshStateFromServer]);
+
+    useEffect(() => {
+        const chatCleanupInterval = setInterval(() => {
+            setLiveChatSessions(prevSessions => {
+                const now = Date.now();
+                // 5 hours in milliseconds
+                const fiveHoursInMillis = 5 * 60 * 60 * 1000;
+                
+                const activeSessions = prevSessions.filter(session => {
+                    if (!session.messages || session.messages.length === 0) {
+                        // Keep sessions that might have just been initialized but have no messages
+                        return true; 
+                    }
+                    const lastMessage = session.messages[session.messages.length - 1];
+                    // Check if the last message is older than 5 hours
+                    return (now - lastMessage.timestamp) < fiveHoursInMillis;
+                });
+
+                // Only update state if there's a change to avoid unnecessary re-renders/saves
+                if (activeSessions.length < prevSessions.length) {
+                    console.log(`Resetting ${prevSessions.length - activeSessions.length} inactive chat session(s).`);
+                    return activeSessions;
+                }
+                
+                return prevSessions;
+            });
+        }, 3600000); // Check every hour (3,600,000 milliseconds)
+
+        // Clear the interval when the component unmounts
+        return () => clearInterval(chatCleanupInterval);
+    }, []); // Empty dependency array ensures this runs only once on mount
     
     const currentUser = useMemo(() => allUsers.find(u => u.id === currentUserId) ?? null, [allUsers, currentUserId]);
 
@@ -513,7 +537,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         addTransaction, addInvestment, approveInvestment, updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit,
         rejectDeposit, adminDeleteUser, checkAndResetLoginFlag, liveChatSessions, sendLiveChatMessage, sendAdminReply, markUserChatAsRead, markAdminChatAsRead,
         setUserTyping, setAdminTyping, contactMessages, submitContactMessage, markContactMessageAsRead, submitVerification, approveVerification, rejectVerification, sendAdminMessage,
-        markNotificationAsRead, deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, markWelcomeEmailSent, addNotification
+        markNotificationAsRead, deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, markWelcomeEmailSent, addNotification, refreshStateFromServer
     }), [
         currentUser, allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, isLoading, activePage,
         login, logout, signup, createDefaultAccount, updateUserBalance, addTransaction, addInvestment, approveInvestment, 
@@ -521,7 +545,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         rejectDeposit, adminDeleteUser, checkAndResetLoginFlag, sendLiveChatMessage, sendAdminReply, markUserChatAsRead, 
         markAdminChatAsRead, setUserTyping, setAdminTyping, submitContactMessage, markContactMessageAsRead, submitVerification, 
         approveVerification, rejectVerification, sendAdminMessage, markNotificationAsRead, deleteNotification, changePassword, 
-        toggle2FA, deleteAccount, navigateTo, markWelcomeEmailSent, addNotification
+        toggle2FA, deleteAccount, navigateTo, markWelcomeEmailSent, addNotification, refreshStateFromServer
     ]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
