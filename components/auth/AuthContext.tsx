@@ -50,7 +50,6 @@ interface AuthContextType {
     navigateTo: (page: Page) => void;
     markWelcomeEmailSent: (userId: number) => void;
     addNotification: (userId: number, message: string, title?: string, link?: Page) => void;
-    refreshStateFromServer: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -84,13 +83,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [error, setError] = useState<string | null>(null);
     
     const hasHydrated = useRef(false);
-    const isSavingRef = useRef(false);
 
     const persistState = useCallback(async (stateToPersist: any) => {
-        if (isSavingRef.current || !hasHydrated.current) return;
-        isSavingRef.current = true;
+        if (!hasHydrated.current) return;
         
-        console.log(`Persisting state via API (immediate)...`);
+        console.log(`Persisting state via API...`);
         try {
             const response = await fetch('/api/save-state', {
                 method: 'PUT',
@@ -101,53 +98,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             else console.log("State persisted successfully.");
         } catch (err) {
             console.error("Error persisting state:", err);
-        } finally {
-            isSavingRef.current = false;
         }
     }, []);
-
-    const refreshStateFromServer = useCallback(async () => {
-        if (isSavingRef.current) {
-            console.log("Skipping refresh: a save is in progress.");
-            return;
-        }
-        try {
-            const response = await fetch('/api/get-state');
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.allUsers) {
-                    setAllUsers(data.allUsers);
-                    setWithdrawalRequests(data.withdrawalRequests || []);
-                    setDepositRequests(data.depositRequests || []);
-                    setLiveChatSessions(data.liveChatSessions || []);
-                    setContactMessages(data.contactMessages || []);
-                }
-            }
-        } catch (err) {
-            console.error("Error refreshing state from server:", err);
-        }
-    }, []);
-
+    
+    // This central useEffect is responsible for persisting any state change to the backend.
     useEffect(() => {
         const fullState = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
+        // Only save state if hydration is complete and we are not in the initial loading phase.
         if (hasHydrated.current && !isLoading) {
             persistState(fullState);
         }
     }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, persistState, isLoading]);
 
 
+    // This useEffect handles the initial data hydration from the server.
     useEffect(() => {
         const fetchData = async () => {
             setIsLoading(true);
             setError(null);
             try {
-                const savedUserId = localStorage.getItem('bittitan_userId');
-                await refreshStateFromServer();
                 const initialDataResponse = await fetch('/api/get-state');
+                const savedUserId = localStorage.getItem('bittitan_userId');
                 if (initialDataResponse.ok) {
                     const data = await initialDataResponse.json();
-                     if (savedUserId && data.allUsers.some((u: User) => u.id === parseInt(savedUserId, 10))) {
-                        setCurrentUserId(parseInt(savedUserId, 10));
+                    if (data && data.allUsers) {
+                        setAllUsers(data.allUsers);
+                        setWithdrawalRequests(data.withdrawalRequests || []);
+                        setDepositRequests(data.depositRequests || []);
+                        setLiveChatSessions(data.liveChatSessions || []);
+                        setContactMessages(data.contactMessages || []);
+                         if (savedUserId && data.allUsers.some((u: User) => u.id === parseInt(savedUserId, 10))) {
+                            setCurrentUserId(parseInt(savedUserId, 10));
+                        }
                     }
                 }
             } catch (err: any) {
@@ -159,7 +141,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
         };
         fetchData();
-    }, [refreshStateFromServer]);
+    }, []);
 
     useEffect(() => {
         const chatCleanupInterval = setInterval(() => {
@@ -537,7 +519,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         addTransaction, addInvestment, approveInvestment, updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit,
         rejectDeposit, adminDeleteUser, checkAndResetLoginFlag, liveChatSessions, sendLiveChatMessage, sendAdminReply, markUserChatAsRead, markAdminChatAsRead,
         setUserTyping, setAdminTyping, contactMessages, submitContactMessage, markContactMessageAsRead, submitVerification, approveVerification, rejectVerification, sendAdminMessage,
-        markNotificationAsRead, deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, markWelcomeEmailSent, addNotification, refreshStateFromServer
+        markNotificationAsRead, deleteNotification, changePassword, toggle2FA, deleteAccount, activePage, navigateTo, markWelcomeEmailSent, addNotification
     }), [
         currentUser, allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, isLoading, activePage,
         login, logout, signup, createDefaultAccount, updateUserBalance, addTransaction, addInvestment, approveInvestment, 
@@ -545,7 +527,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         rejectDeposit, adminDeleteUser, checkAndResetLoginFlag, sendLiveChatMessage, sendAdminReply, markUserChatAsRead, 
         markAdminChatAsRead, setUserTyping, setAdminTyping, submitContactMessage, markContactMessageAsRead, submitVerification, 
         approveVerification, rejectVerification, sendAdminMessage, markNotificationAsRead, deleteNotification, changePassword, 
-        toggle2FA, deleteAccount, navigateTo, markWelcomeEmailSent, addNotification, refreshStateFromServer
+        toggle2FA, deleteAccount, navigateTo, markWelcomeEmailSent, addNotification
     ]);
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

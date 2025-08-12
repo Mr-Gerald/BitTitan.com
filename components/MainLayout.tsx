@@ -29,19 +29,10 @@ const MainLayout: React.FC = () => {
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
     if (!auth || !auth.user) return null;
-    const { user, logout, activePage, navigateTo, refreshStateFromServer } = auth;
+    const { user, logout, activePage, navigateTo } = auth;
     
     const session = auth.liveChatSessions.find(s => s.userId === user?.id);
     const hasUnreadAdminMessage = session?.hasUnreadAdminMessage ?? false;
-
-    useEffect(() => {
-        // High-frequency polling to create a near real-time experience
-        const interval = setInterval(() => {
-            refreshStateFromServer();
-        }, 1500); // Refresh data every 1.5 seconds
-
-        return () => clearInterval(interval);
-    }, [refreshStateFromServer]);
 
     const handleToggleLiveChat = () => {
         setIsLiveChatOpen(prev => !prev);
