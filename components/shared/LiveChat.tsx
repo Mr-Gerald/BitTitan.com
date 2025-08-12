@@ -16,6 +16,7 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
     const auth = useContext(AuthContext);
     const [input, setInput] = useState('');
     const [typingTimeout, setTypingTimeout] = useState<number | null>(null);
+    const [showRefreshPrompt, setShowRefreshPrompt] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const user = auth?.user;
 
@@ -39,13 +40,37 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
         }
     }, [user, session, auth]);
 
-    useEffect(scrollToBottom, [messages, session?.isAdminTyping]);
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, session?.isAdminTyping, showRefreshPrompt]);
     
     useEffect(() => {
         if (user) {
             auth?.markUserChatAsRead(user.id);
         }
     }, [user, auth]);
+
+    // Effect to show a refresh prompt if admin hasn't responded in 3 minutes
+    useEffect(() => {
+        setShowRefreshPrompt(false);
+        let timer: number;
+
+        if (lastMessage?.sender === 'user') {
+            timer = window.setTimeout(() => {
+                // Re-check the condition before showing the prompt
+                const currentSession = auth?.liveChatSessions.find(s => s.userId === user?.id);
+                const currentMessages = currentSession?.messages.filter(m => m.text.trim() !== '') || [];
+                if (currentMessages.length > 0 && currentMessages[currentMessages.length - 1].sender === 'user') {
+                    setShowRefreshPrompt(true);
+                }
+            }, 180000); // 3 minutes
+        }
+
+        return () => {
+            clearTimeout(timer);
+        };
+    }, [lastMessage, auth, user?.id]);
+
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setInput(e.target.value);
@@ -111,6 +136,16 @@ const LiveChat: React.FC<LiveChatProps> = ({ onClose }) => {
                          <div className="text-xs text-basetitan-text-secondary italic px-4 py-2">
                              Admin is typing...
                          </div>
+                    </div>
+                )}
+                {showRefreshPrompt && (
+                    <div className="flex justify-center my-4 animate-fade-in">
+                        <div className="text-center text-xs bg-basetitan-dark p-3 rounded-lg border border-basetitan-border max-w-sm">
+                            <p className="font-semibold text-white">Not seeing a reply?</p>
+                            <p className="text-basetitan-text-secondary mt-1">
+                                If 3 minutes have passed, please <a href="#" onClick={(e) => { e.preventDefault(); window.location.reload(); }} className="text-accent-primary font-bold hover:underline">refresh the page</a> to sync with our support team. You won't lose your place.
+                            </p>
+                        </div>
                     </div>
                 )}
                 <div ref={messagesEndRef} />

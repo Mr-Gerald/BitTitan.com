@@ -34,6 +34,23 @@ const MainLayout: React.FC = () => {
     const session = auth.liveChatSessions.find(s => s.userId === user?.id);
     const hasUnreadAdminMessage = session?.hasUnreadAdminMessage ?? false;
 
+    // Persist chat open state to sessionStorage to survive refreshes
+    useEffect(() => {
+        if (isLiveChatOpen) {
+            sessionStorage.setItem('bittitan_chat_open', 'true');
+        } else {
+            sessionStorage.removeItem('bittitan_chat_open');
+        }
+    }, [isLiveChatOpen]);
+
+    // Restore chat state on initial component mount
+    useEffect(() => {
+        const wasChatOpen = sessionStorage.getItem('bittitan_chat_open');
+        if (wasChatOpen === 'true') {
+            setIsLiveChatOpen(true);
+        }
+    }, []);
+
     const handleToggleLiveChat = () => {
         setIsLiveChatOpen(prev => !prev);
         if (!isLiveChatOpen && user) { // If opening the chat
