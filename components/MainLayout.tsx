@@ -34,6 +34,13 @@ const MainLayout: React.FC = () => {
     const session = auth.liveChatSessions.find(s => s.userId === user?.id);
     const hasUnreadAdminMessage = session?.hasUnreadAdminMessage ?? false;
 
+    // Previously, a polling mechanism existed here to refresh data from the server
+    // every 1.5 seconds. This was causing critical race conditions where new user
+    // submissions (like deposits or verifications) were being overwritten by old
+    // data fetched from the server before the new data could be saved.
+    // This polling has been completely removed to ensure data stability. The new
+    // architecture relies on a robust save queue in the AuthContext.
+
     const handleToggleLiveChat = () => {
         setIsLiveChatOpen(prev => !prev);
         if (!isLiveChatOpen && user) { // If opening the chat
