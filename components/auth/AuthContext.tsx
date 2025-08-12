@@ -74,9 +74,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [currentUserId, setCurrentUserId] = useState<number | null>(null);
     const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
     const [depositRequests, setDepositRequests] = useState<DepositRequest[]>([]);
-    const [wasJustLoggedIn, setWasJustLoggedIn] = useState(false);
     const [liveChatSessions, setLiveChatSessions] = useState<LiveChatSession[]>([]);
     const [contactMessages, setContactMessages] = useState<ContactMessage[]>([]);
+    
+    const [wasJustLoggedIn, setWasJustLoggedIn] = useState(false);
     const [activePage, setActivePage] = useState<Page>(Page.Dashboard);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -84,11 +85,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const hasHydrated = useRef(false);
     const isPersistingRef = useRef(false);
     const stateQueueRef = useRef<any>(null);
-
-    const stateRef = useRef({ allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages });
-    useEffect(() => {
-        stateRef.current = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
-    }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages]);
 
     const persistState = useCallback(async (stateToPersist?: any) => {
         if (stateToPersist) {
@@ -103,7 +99,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const state = stateQueueRef.current;
         stateQueueRef.current = null; 
 
-        console.log(`Persisting state via API...`);
+        console.log(`Persisting state via API (debounced)...`);
         try {
             const response = await fetch('/api/save-state', {
                 method: 'PUT',
@@ -125,6 +121,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
         }
     }, []);
+
+    // **NEW**: Centralized effect to persist state changes.
+    useEffect(() => {
+        if (!hasHydrated.current || isLoading) {
+            return;
+        }
+        const currentState = { allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages };
+        persistState(currentState);
+    }, [allUsers, withdrawalRequests, depositRequests, liveChatSessions, contactMessages, persistState, isLoading]);
+
 
     useEffect(() => {
         const fetchData = async () => {
@@ -170,20 +176,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, [activePage]);
 
     const login = (name: string, pass: string): { success: boolean; error?: string } => {
-        const foundUser = stateRef.current.allUsers.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === pass);
+        const foundUser = allUsers.find(u => u.name.toLowerCase() === name.toLowerCase() && u.password === pass);
         if (foundUser) {
             const today = getTodayDateString();
             if (foundUser.lastLoginDate !== today) {
-                setAllUsers(prevUsers => {
-                    const updatedUsers = updateUserInState(prevUsers, foundUser.id, user => {
+                setAllUsers(prevUsers => 
+                    updateUserInState(prevUsers, foundUser.id, user => {
                         const yesterday = new Date();
                         yesterday.setDate(yesterday.getDate() - 1);
                         const newStreak = user.lastLoginDate === yesterday.toISOString().split('T')[0] ? user.loginStreak + 1 : 1;
                         return { ...user, lastLoginDate: today, loginStreak: newStreak };
-                    });
-                     persistState({ ...stateRef.current, allUsers: updatedUsers });
-                     return updatedUsers;
-                });
+                    })
+                );
             }
             setCurrentUserId(foundUser.id);
             localStorage.setItem('bittitan_userId', foundUser.id.toString());
@@ -208,50 +212,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }, []);
 
     const signup = async (fullName: string, name: string, email: string, pass: string, country: string, dateOfBirth: string, phone: string, referralCode?: string | null): Promise<{ success: boolean; error?: string }> => {
-        if (stateRef.current.allUsers.some(u => u.email.toLowerCase() === email.toLowerCase() || u.name.toLowerCase() === name.toLowerCase())) {
+        if (allUsers.some(u => u.email.toLowerCase() === email.toLowerCase() || u.name.toLowerCase() === name.toLowerCase())) {
             return { success: false, error: 'Account with this email or username already exists.' };
         }
         
         let newUser = generateNewUser(Date.now(), fullName, name, email, country, dateOfBirth, phone, pass);
-        const referringUser = referralCode ? stateRef.current.allUsers.find(u => u.referralCode === referralCode) : null;
+        const referringUser = referralCode ? allUsers.find(u => u.referralCode === referralCode) : null;
         if (referringUser) newUser.referredBy = referringUser.id;
         
-        setAllUsers(prev => {
-            const newAllUsers = [...prev, newUser];
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
+        setAllUsers(prev => [...prev, newUser]);
         
         return { success: true };
     };
 
     const createDefaultAccount = (details: any): boolean => {
-         if (stateRef.current.allUsers.some(u => u.email.toLowerCase() === details.email.toLowerCase() || u.name.toLowerCase() === details.name.toLowerCase())) {
+         if (allUsers.some(u => u.email.toLowerCase() === details.email.toLowerCase() || u.name.toLowerCase() === details.name.toLowerCase())) {
             return false;
         }
         const newUser = generateDefaultAccount(Date.now(), details);
-        setAllUsers(prev => {
-            const newAllUsers = [...prev, newUser];
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
+        setAllUsers(prev => [...prev, newUser]);
         return true;
     };
     
     const addTransaction = useCallback((userId: number, transaction: Omit<Transaction, 'id' | 'date'> & { id?: string }) => {
-        setAllUsers(prevUsers => {
-            const newAllUsers = updateUserInState(prevUsers, userId, user => {
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, userId, user => {
                 const newTransaction: Transaction = { ...transaction, id: transaction.id || `tx${Date.now()}`, date: getTodayDateString(), status: 'Completed' };
                 return { ...user, transactions: [newTransaction, ...user.transactions] };
-            });
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+            })
+        );
+    }, []);
     
     const updateUserBalance = useCallback((userId: number, asset: 'BTC' | 'USDT' | 'ETH', amount: number, type: Transaction['type'], description: string) => {
-        setAllUsers(prevUsers => {
-            const newAllUsers = updateUserInState(prevUsers, userId, user => {
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, userId, user => {
                 const newBalance = (user.balances[asset] || 0) + amount;
                 const newTransaction: Transaction = {
                     id: `tx${Date.now()}`, type, asset, amount: Math.abs(amount), description, date: getTodayDateString(), status: 'Completed',
@@ -261,355 +255,260 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     balances: { ...user.balances, [asset]: Math.max(0, newBalance) },
                     transactions: [newTransaction, ...user.transactions],
                 };
-            });
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+            })
+        );
+    }, []);
 
     const addInvestment = useCallback((userId: number, investment: Omit<ActiveInvestment, 'id'>) => {
-        setAllUsers(prevUsers => {
-            const newAllUsers = updateUserInState(prevUsers, userId, user => {
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, userId, user => {
                 const newInvestment: ActiveInvestment = { ...investment, id: `inv${Date.now()}` };
                 return { ...user, activeInvestments: [newInvestment, ...user.activeInvestments] };
-            });
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+            })
+        );
+    }, []);
     
     const addNotification = useCallback((userId: number, message: string, title?: string, link?: Page) => {
         setAllUsers(prevUsers => {
             const newNotification: Notification = { id: `notif-${Date.now()}`, title, message, link, read: false, date: getISODateString() };
-            const newAllUsers = updateUserInState(prevUsers, userId, user => ({ ...user, notifications: [newNotification, ...user.notifications] }));
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
+            return updateUserInState(prevUsers, userId, user => ({ ...user, notifications: [newNotification, ...user.notifications] }));
         });
-    }, [persistState]);
+    }, []);
 
     const approveInvestment = useCallback((userId: number, investmentId: string) => {
-        const user = stateRef.current.allUsers.find(u => u.id === userId);
+        const user = allUsers.find(u => u.id === userId);
         const investment = user?.activeInvestments.find(inv => inv.id === investmentId);
         if (!user || !investment) return;
 
         setAllUsers(prevUsers => {
             let allUpdatedUsers = prevUsers;
             
-            // Credit user
             allUpdatedUsers = updateUserInState(allUpdatedUsers, userId, u => {
                 const newBalance = u.balances[investment.asset] + investment.potentialReturn;
                 const profitTx: Transaction = { id: `tx-profit-${investment.id}`, type: 'Profit', asset: investment.asset, amount: investment.potentialReturn, description: `Return from ${investment.planName}`, date: getTodayDateString(), status: 'Completed' };
+                const notification: Notification = { id: `notif-profit-${investment.id}`, title: 'Profit Credited', message: `Your profit of ${(investment.potentialReturn - investment.amountInvested).toFixed(4)} ${investment.asset} from the ${investment.planName} plan has been credited.`, date: getISODateString(), read: false, link: Page.Wallet };
                 return {
                     ...u,
                     balances: { ...u.balances, [investment.asset]: newBalance },
                     transactions: [profitTx, ...u.transactions],
                     activeInvestments: u.activeInvestments.map(inv => inv.id === investmentId ? { ...inv, status: 'Completed' } : inv),
+                    notifications: [notification, ...u.notifications]
                 };
             });
 
-            // Debit admin
             allUpdatedUsers = updateUserInState(allUpdatedUsers, ADMIN_USER.id, admin => {
                 const newBalance = admin.balances[investment.asset] - investment.potentialReturn;
                 const adminTx: Transaction = { id: `tx-admret-${investment.id}`, type: 'Withdrawal', asset: investment.asset, amount: investment.potentialReturn, description: `Return sent for ${investment.planName} to ${user.name}`, date: getTodayDateString(), status: 'Completed' };
                 return { ...admin, balances: { ...admin.balances, [investment.asset]: newBalance }, transactions: [adminTx, ...admin.transactions] };
             });
 
-            // Send Notification
-            const profitAmount = investment.potentialReturn - investment.amountInvested;
-            const notification: Notification = { id: `notif-profit-${investment.id}`, title: 'Profit Credited', message: `Your profit of ${profitAmount.toFixed(4)} ${investment.asset} from the ${investment.planName} plan has been credited.`, date: getISODateString(), read: false, link: Page.Wallet };
-            allUpdatedUsers = updateUserInState(allUpdatedUsers, userId, u => ({ ...u, notifications: [notification, ...u.notifications] }));
-
-            persistState({ ...stateRef.current, allUsers: allUpdatedUsers });
             return allUpdatedUsers;
         });
-    }, [persistState]);
+    }, [allUsers]);
 
     const updateUserProfile = useCallback((userId: number, profileData: Partial<any>) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, ...profileData }));
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+        setAllUsers(prev => updateUserInState(prev, userId, user => ({ ...user, ...profileData })));
+    }, []);
     
     const submitWithdrawalRequest = useCallback((request: Omit<WithdrawalRequest, 'id' | 'date' | 'status'>) => {
+        const user = allUsers.find(u => u.id === request.userId);
+        if (!user) return;
         const newRequest: WithdrawalRequest = { ...request, id: `wd-${Date.now()}`, date: getTodayDateString(), status: 'Pending' };
         
-        setAllUsers(prevUsers => {
-            const newUsers = updateUserInState(prevUsers, request.userId, user => {
-                const newTransaction: Transaction = { id: newRequest.id, type: 'Withdrawal', asset: request.asset, amount: request.amount, description: `Request to ${request.address}`, date: getTodayDateString(), status: 'Pending' };
-                return { ...user, transactions: [newTransaction, ...user.transactions] };
-            });
-            setWithdrawalRequests(prevReqs => {
-                const newReqs = [newRequest, ...prevReqs];
-                persistState({ ...stateRef.current, allUsers: newUsers, withdrawalRequests: newReqs });
-                return newReqs;
-            });
-            return newUsers;
-        });
-    }, [persistState]);
+        setWithdrawalRequests(prevReqs => [newRequest, ...prevReqs]);
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, request.userId, u => {
+                const newTransaction: Transaction = { id: newRequest.id, type: 'Withdrawal', asset: request.asset, amount: request.amount, description: `Request to ${request.address}`, date: newRequest.date, status: 'Pending' };
+                return { ...u, transactions: [newTransaction, ...u.transactions] };
+            })
+        );
+    }, [allUsers]);
 
     const approveWithdrawal = useCallback((requestId: string) => {
-        setWithdrawalRequests(prevReqs => {
-            const request = prevReqs.find(r => r.id === requestId);
-            if (!request) return prevReqs;
+        const request = withdrawalRequests.find(r => r.id === requestId);
+        if (!request) return;
 
-            setAllUsers(prevUsers => {
-                const newAllUsers = updateUserInState(prevUsers, request.userId, u => ({
-                    ...u,
-                    balances: { ...u.balances, [request.asset]: u.balances[request.asset] - request.amount },
-                    transactions: u.transactions.map(tx => tx.id === requestId ? { ...tx, status: 'Completed', description: `Withdrawal to ${request.address}` } : tx)
-                }));
-                addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} has been approved.`, "Withdrawal Approved", Page.Wallet);
-                const newWithdrawalRequests = prevReqs.map(r => r.id === requestId ? { ...r, status: 'Approved' as const } : r);
-                persistState({ ...stateRef.current, allUsers: newAllUsers, withdrawalRequests: newWithdrawalRequests });
-                return newAllUsers;
-            });
-            return prevReqs.map(r => r.id === requestId ? { ...r, status: 'Approved' as const } : r);
-        });
-    }, [persistState, addNotification]);
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, request.userId, u => ({
+                ...u,
+                balances: { ...u.balances, [request.asset]: u.balances[request.asset] - request.amount },
+                transactions: u.transactions.map(tx => tx.id === requestId ? { ...tx, status: 'Completed', description: `Withdrawal to ${request.address}` } : tx)
+            }))
+        );
+        addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} has been approved.`, "Withdrawal Approved", Page.Wallet);
+        setWithdrawalRequests(prevReqs => prevReqs.filter(r => r.id !== requestId));
+    }, [withdrawalRequests, addNotification]);
 
     const rejectWithdrawal = useCallback((requestId: string) => {
-        setWithdrawalRequests(prevReqs => {
-            const request = prevReqs.find(r => r.id === requestId);
-            if (!request) return prevReqs;
+        const request = withdrawalRequests.find(r => r.id === requestId);
+        if (!request) return;
 
-            setAllUsers(prevUsers => {
-                const newAllUsers = updateUserInState(prevUsers, request.userId, u => ({
-                    ...u, transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Rejected' } : tx)
-                }));
-                addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} was rejected. Please contact support.`, "Withdrawal Rejected", Page.Wallet);
-                const newWithdrawalRequests = prevReqs.map(r => r.id === requestId ? { ...r, status: 'Rejected' as const } : r);
-                persistState({ ...stateRef.current, allUsers: newAllUsers, withdrawalRequests: newWithdrawalRequests });
-                return newAllUsers;
-            });
-            return prevReqs.map(r => r.id === requestId ? { ...r, status: 'Rejected' as const } : r);
-        });
-    }, [persistState, addNotification]);
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, request.userId, u => ({
+                ...u, transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Rejected' } : tx)
+            }))
+        );
+        addNotification(request.userId, `Your withdrawal of ${request.amount} ${request.asset} was rejected. Please contact support.`, "Withdrawal Rejected", Page.Wallet);
+        setWithdrawalRequests(prevReqs => prevReqs.filter(r => r.id !== requestId));
+    }, [withdrawalRequests, addNotification]);
 
     const submitDepositRequest = useCallback((request: Omit<DepositRequest, 'id' | 'date' | 'status' | 'userName'>) => {
-        const user = stateRef.current.allUsers.find(u => u.id === request.userId);
+        const user = allUsers.find(u => u.id === request.userId);
         if (!user) return;
 
         const newRequest: DepositRequest = { ...request, id: `dep-${Date.now()}`, date: getTodayDateString(), status: 'Pending', userName: user.name };
         
-        setAllUsers(prevUsers => {
-            const newUsers = updateUserInState(prevUsers, request.userId, u => {
+        setDepositRequests(prev => [newRequest, ...prev]);
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, request.userId, u => {
                 const newTransaction: Transaction = { id: newRequest.id, type: 'Deposit', asset: request.asset, amount: request.amount, description: 'Crypto deposit review', status: 'Pending', date: getTodayDateString() };
                 const newNotification: Notification = { id: `notif-${Date.now()}`, title: "Deposit Request Submitted", message: `Your deposit of ${request.amount.toFixed(8)} ${request.asset} is pending review.`, read: false, date: getISODateString() };
                 return { ...u, transactions: [newTransaction, ...u.transactions], notifications: [newNotification, ...u.notifications] };
-            });
-            setDepositRequests(prevRequests => {
-                const newRequests = [newRequest, ...prevRequests];
-                persistState({ ...stateRef.current, allUsers: newUsers, depositRequests: newRequests });
-                return newRequests;
-            });
-            return newUsers;
-        });
-    }, [persistState]);
+            })
+        );
+    }, [allUsers]);
 
     const approveDeposit = useCallback((requestId: string) => {
-        const request = stateRef.current.depositRequests.find(r => r.id === requestId);
+        const request = depositRequests.find(r => r.id === requestId);
         if (!request) return;
 
-        setAllUsers(prevUsers => {
-            const newAllUsers = updateUserInState(prevUsers, request.userId, u => ({
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, request.userId, u => ({
                 ...u,
                 balances: { ...u.balances, [request.asset]: u.balances[request.asset] + request.amount },
                 transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Completed', type: 'Deposit', description: 'Approved crypto deposit' } : tx)
-            }));
-            
-            setDepositRequests(prevReqs => {
-                const newDepositRequests = prevReqs.map(r => r.id === requestId ? { ...r, status: 'Approved' as const } : r);
-                addNotification(request.userId, `Your deposit of ${request.amount.toFixed(8)} ${request.asset} has been approved.`, "Deposit Approved", Page.Wallet);
-                persistState({ ...stateRef.current, allUsers: newAllUsers, depositRequests: newDepositRequests });
-                return newDepositRequests;
-            });
-            return newAllUsers;
-        });
-    }, [persistState, addNotification]);
+            }))
+        );
+        addNotification(request.userId, `Your deposit of ${request.amount.toFixed(8)} ${request.asset} has been approved.`, "Deposit Approved", Page.Wallet);
+        setDepositRequests(prevReqs => prevReqs.filter(r => r.id !== requestId));
+    }, [depositRequests, addNotification]);
 
     const rejectDeposit = useCallback((requestId: string, reason: string) => {
-        const request = stateRef.current.depositRequests.find(r => r.id === requestId);
+        const request = depositRequests.find(r => r.id === requestId);
         if (!request) return;
 
-        setAllUsers(prevUsers => {
-            const newAllUsers = updateUserInState(prevUsers, request.userId, u => ({
+        setAllUsers(prevUsers => 
+            updateUserInState(prevUsers, request.userId, u => ({
                 ...u, transactions: u.transactions.map(tx => (tx.id === requestId) ? { ...tx, status: 'Rejected' } : tx)
-            }));
-            setDepositRequests(prevReqs => {
-                const newDepositRequests = prevReqs.map(r => r.id === requestId ? { ...r, status: 'Rejected' as const } : r);
-                addNotification(request.userId, `Your deposit was rejected. Reason: ${reason}`, "Deposit Rejected", Page.Wallet);
-                persistState({ ...stateRef.current, allUsers: newAllUsers, depositRequests: newDepositRequests });
-                return newDepositRequests;
-            });
-            return newAllUsers;
-        });
-    }, [persistState, addNotification]);
+            }))
+        );
+        addNotification(request.userId, `Your deposit was rejected. Reason: ${reason}`, "Deposit Rejected", Page.Wallet);
+        setDepositRequests(prevReqs => prevReqs.filter(r => r.id !== requestId));
+    }, [depositRequests, addNotification]);
     
     const sendLiveChatMessage = useCallback((userId: number, text: string) => {
-        const user = stateRef.current.allUsers.find(u => u.id === userId);
+        const user = allUsers.find(u => u.id === userId);
         if (!user) return;
         
         setLiveChatSessions(prev => {
             const existingSession = prev.find(s => s.userId === userId);
             const newMessage: LiveChatMessage = { sender: 'user', text, timestamp: Date.now() };
-            let newSessions: LiveChatSession[];
 
             if(existingSession) {
-                newSessions = prev.map(s => s.userId === userId ? {...s, messages: [...s.messages, newMessage], hasUnreadUserMessage: true, hasUnreadAdminMessage: false } : s);
+                return prev.map(s => s.userId === userId ? {...s, messages: [...s.messages, newMessage], hasUnreadUserMessage: true, hasUnreadAdminMessage: false } : s);
             } else {
                 const newSession: LiveChatSession = { userId, userName: user.name, messages: [{ sender: 'admin', text: `Hi ${user.name}! How can we help you today?`, timestamp: Date.now() }, newMessage], hasUnreadAdminMessage: false, hasUnreadUserMessage: true };
-                newSessions = [...prev, newSession];
+                return [...prev, newSession];
             }
-            persistState({ ...stateRef.current, liveChatSessions: newSessions });
-            return newSessions;
         });
-    }, [persistState]);
+    }, [allUsers]);
 
     const sendAdminReply = useCallback((userId: number, text: string) => {
         setLiveChatSessions(prev => {
             const newMessage: LiveChatMessage = { sender: 'admin', text, timestamp: Date.now() };
-            const newSessions = prev.map(s => s.userId === userId ? { ...s, messages: [...s.messages, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: false } : s);
-            persistState({ ...stateRef.current, liveChatSessions: newSessions });
-            return newSessions;
+            return prev.map(s => s.userId === userId ? { ...s, messages: [...s.messages, newMessage], hasUnreadAdminMessage: true, hasUnreadUserMessage: false } : s);
         });
-    }, [persistState]);
+    }, []);
 
     const markUserChatAsRead = useCallback((userId: number) => {
-        setLiveChatSessions(prev => {
-            const newSessions = prev.map(s => s.userId === userId ? { ...s, hasUnreadAdminMessage: false } : s);
-            persistState({ ...stateRef.current, liveChatSessions: newSessions });
-            return newSessions;
-        });
-    }, [persistState]);
+        setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, hasUnreadAdminMessage: false } : s));
+    }, []);
     
     const markAdminChatAsRead = useCallback((userId: number) => {
-        setLiveChatSessions(prev => {
-            const newSessions = prev.map(s => s.userId === userId ? { ...s, hasUnreadUserMessage: false } : s);
-            persistState({ ...stateRef.current, liveChatSessions: newSessions });
-            return newSessions;
-        });
-    }, [persistState]);
+        setLiveChatSessions(prev => prev.map(s => s.userId === userId ? { ...s, hasUnreadUserMessage: false } : s));
+    }, []);
     
     const setUserTyping = useCallback((userId: number, isTyping: boolean) => setLiveChatSessions(prev => prev.map(s => (s.userId === userId ? { ...s, isUserTyping: isTyping } : s))), []);
     const setAdminTyping = useCallback((userId: number, isTyping: boolean) => setLiveChatSessions(prev => prev.map(s => (s.userId === userId ? { ...s, isAdminTyping: isTyping } : s))), []);
 
     const submitContactMessage = useCallback((name: string, email: string, message: string) => {
-        setContactMessages(prev => {
-            const newMessage: ContactMessage = { id: `cm-${Date.now()}`, name, email, message, date: getISODateString(), read: false };
-            const newContactMessages = [newMessage, ...prev];
-            persistState({ ...stateRef.current, contactMessages: newContactMessages });
-            return newContactMessages;
-        });
-    }, [persistState]);
+        setContactMessages(prev => [
+            { id: `cm-${Date.now()}`, name, email, message, date: getISODateString(), read: false }, 
+            ...prev
+        ]);
+    }, []);
 
     const markContactMessageAsRead = useCallback((id: string) => {
-        setContactMessages(prev => {
-            const newContactMessages = prev.map(msg => msg.id === id ? { ...msg, read: true } : msg);
-            persistState({ ...stateRef.current, contactMessages: newContactMessages });
-            return newContactMessages;
-        });
-    }, [persistState]);
+        setContactMessages(prev => prev.map(msg => msg.id === id ? { ...msg, read: true } : msg));
+    }, []);
 
     const sendAdminMessage = useCallback((userId: number, message: string) => addNotification(userId, message), [addNotification]);
     
     const submitVerification = useCallback((userId: number, data: VerificationData) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, verificationStatus: 'Pending', verificationData: data }));
-            addNotification(userId, 'Your verification documents have been submitted and are now pending review.', 'Verification Pending', Page.Account);
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState, addNotification]);
+        setAllUsers(prev => 
+            updateUserInState(prev, userId, user => {
+                const newNotification: Notification = { id: `notif-${Date.now()}`, message: 'Your verification documents have been submitted and are now pending review.', title: 'Verification Pending', read: false, date: getISODateString(), link: Page.Account };
+                return { 
+                    ...user, 
+                    verificationStatus: 'Pending', 
+                    verificationData: data,
+                    notifications: [newNotification, ...user.notifications]
+                };
+            })
+        );
+    }, []);
 
     const approveVerification = useCallback((userId: number) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, verificationStatus: 'Verified', verificationData: undefined }));
-            addNotification(userId, 'Congratulations! Your account has been verified.', 'Verification Approved');
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState, addNotification]);
+        setAllUsers(prev => updateUserInState(prev, userId, user => ({ ...user, verificationStatus: 'Verified', verificationData: undefined })));
+        addNotification(userId, 'Congratulations! Your account has been verified.', 'Verification Approved');
+    }, [addNotification]);
     
     const rejectVerification = useCallback((userId: number, reason: string) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, verificationStatus: 'Rejected', verificationData: undefined }));
-            addNotification(userId, `Your verification was rejected. Reason: ${reason}.`, 'Verification Rejected', Page.Verification);
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState, addNotification]);
+        setAllUsers(prev => updateUserInState(prev, userId, user => ({ ...user, verificationStatus: 'Rejected', verificationData: undefined })));
+        addNotification(userId, `Your verification was rejected. Reason: ${reason}.`, 'Verification Rejected', Page.Verification);
+    }, [addNotification]);
     
     const markNotificationAsRead = useCallback((userId: number, notificationId: string) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, notifications: user.notifications.map(n => n.id === notificationId ? { ...n, read: true } : n) }));
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+        setAllUsers(prev => updateUserInState(prev, userId, user => ({ ...user, notifications: user.notifications.map(n => n.id === notificationId ? { ...n, read: true } : n) })));
+    }, []);
     
     const deleteNotification = useCallback((userId: number, notificationId: string) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, notifications: user.notifications.filter(n => n.id !== notificationId) }));
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+        setAllUsers(prev => updateUserInState(prev, userId, user => ({ ...user, notifications: user.notifications.filter(n => n.id !== notificationId) })));
+    }, []);
 
     const changePassword = useCallback((userId: number, currentPass: string, newPass: string): { success: boolean, message: string } => {
-        const user = stateRef.current.allUsers.find(u => u.id === userId);
+        const user = allUsers.find(u => u.id === userId);
         if (!user || user.password !== currentPass) return { success: false, message: "Current password is not correct." };
         
-        setAllUsers(prev => {
-            const finalUsers = updateUserInState(prev, userId, u => ({ ...u, password: newPass }));
-            persistState({ ...stateRef.current, allUsers: finalUsers });
-            return finalUsers;
-        });
+        setAllUsers(prev => updateUserInState(prev, userId, u => ({ ...u, password: newPass })));
         return { success: true, message: "Password changed successfully." };
-    }, [persistState]);
+    }, [allUsers]);
     
     const toggle2FA = useCallback((userId: number, code?: string): { success: boolean, message: string } => {
-        const user = stateRef.current.allUsers.find(u => u.id === userId);
+        const user = allUsers.find(u => u.id === userId);
         if (!user) return { success: false, message: "User not found." };
         
         const isEnabling = !user.is2FAEnabled;
         if (isEnabling && (!code || !/^\d{6}$/.test(code))) return { success: false, message: "Invalid 6-digit code." };
         
-        setAllUsers(prev => {
-            const finalUsers = updateUserInState(prev, userId, u => ({ ...u, is2FAEnabled: isEnabling }));
-            persistState({ ...stateRef.current, allUsers: finalUsers });
-            return finalUsers;
-        });
+        setAllUsers(prev => updateUserInState(prev, userId, u => ({ ...u, is2FAEnabled: isEnabling })));
         return { success: true, message: `2FA ${isEnabling ? 'enabled' : 'disabled'} successfully.` };
-    }, [persistState]);
+    }, [allUsers]);
 
     const deleteAccount = useCallback((userId: number) => {
-        setAllUsers(prev => {
-            const newAllUsers = prev.filter(u => u.id !== userId);
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
+        setAllUsers(prev => prev.filter(u => u.id !== userId));
         if (currentUserId === userId) logout();
-    }, [currentUserId, logout, persistState]);
+    }, [currentUserId, logout]);
 
     const adminDeleteUser = useCallback((userId: number) => {
-        setAllUsers(prev => {
-            const newAllUsers = prev.filter(u => u.id !== userId);
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+        setAllUsers(prev => prev.filter(u => u.id !== userId));
+    }, []);
     
     const markWelcomeEmailSent = useCallback((userId: number) => {
-        setAllUsers(prev => {
-            const newAllUsers = updateUserInState(prev, userId, user => ({ ...user, welcomeEmailSent: true }));
-            persistState({ ...stateRef.current, allUsers: newAllUsers });
-            return newAllUsers;
-        });
-    }, [persistState]);
+        setAllUsers(prev => updateUserInState(prev, userId, user => ({ ...user, welcomeEmailSent: true })));
+    }, []);
 
-    const value = useMemo(() => ({
+    const value: AuthContextType = useMemo(() => ({
         user: currentUser, users: allUsers, withdrawalRequests, depositRequests, isLoading, login, logout, signup, createDefaultAccount, updateUserBalance,
         addTransaction, addInvestment, approveInvestment, updateUserProfile, submitWithdrawalRequest, approveWithdrawal, rejectWithdrawal, submitDepositRequest, approveDeposit,
         rejectDeposit, adminDeleteUser, checkAndResetLoginFlag, liveChatSessions, sendLiveChatMessage, sendAdminReply, markUserChatAsRead, markAdminChatAsRead,
