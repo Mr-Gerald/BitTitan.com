@@ -3,6 +3,42 @@ export const config = {
   runtime: 'edge',
 };
 
+// Helper function to create a new bin for an image and return its ID
+const createNewImageBin = async (base64Data: string, apiKey: string): Promise<string | null> => {
+    try {
+        const headers: HeadersInit = {
+            'Content-Type': 'application/json',
+            'X-Master-Key': apiKey,
+            'X-Bin-Private': 'true',
+        };
+
+        // Use a collection if the ID is provided in environment variables, for better organization
+        const collectionId = process.env.JSONBIN_COLLECTION_ID;
+        if (collectionId) {
+            headers['X-Collection-Id'] = collectionId;
+        }
+
+        const res = await fetch('https://api.jsonbin.io/v3/b', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ imageData: base64Data }),
+        });
+
+        if (!res.ok) {
+            console.error(`Failed to create new image bin: ${res.statusText}`);
+            return null;
+        }
+
+        const data = await res.json();
+        return data.metadata.id;
+
+    } catch (err) {
+        console.error('Error creating new image bin:', err);
+        return null;
+    }
+};
+
+
 export default async function handle(req: Request) {
     if (req.method !== 'PUT') {
         return new Response('Method Not Allowed', { status: 405 });
@@ -19,6 +55,41 @@ export default async function handle(req: Request) {
     try {
         const stateToPersist = await req.json();
 
+        // --- Start Image Offloading ---
+        // Scan deposit requests for new images
+        for (const request of stateToPersist.depositRequests || []) {
+            if (request.proofImage && request.proofImage.startsWith('data:image')) {
+                const imageBinId = await createNewImageBin(request.proofImage, JSONBIN_API_KEY);
+                if (imageBinId) {
+                    request.proofImage = `BIN_ID:${imageBinId}`; 
+                }
+            }
+        }
+
+        // Scan user data for new images (verification, avatar)
+        for (const user of stateToPersist.allUsers || []) {
+            if (user.verificationData?.idDocument?.frontImage?.startsWith('data:image')) {
+                const binId = await createNewImageBin(user.verificationData.idDocument.frontImage, JSONBIN_API_KEY);
+                 if (binId && user.verificationData?.idDocument) {
+                    user.verificationData.idDocument.frontImage = `BIN_ID:${binId}`;
+                }
+            }
+            if (user.verificationData?.idDocument?.backImage?.startsWith('data:image')) {
+                const binId = await createNewImageBin(user.verificationData.idDocument.backImage, JSONBIN_API_KEY);
+                 if (binId && user.verificationData?.idDocument) {
+                    user.verificationData.idDocument.backImage = `BIN_ID:${binId}`;
+                }
+            }
+            if (user.avatarUrl && user.avatarUrl.startsWith('data:image')) {
+                const binId = await createNewImageBin(user.avatarUrl, JSONBIN_API_KEY);
+                if(binId) {
+                    user.avatarUrl = `BIN_ID:${binId}`;
+                }
+            }
+        }
+        // --- End Image Offloading ---
+
+        // Now, save the main state object, which has been cleaned of large base64 strings
         const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
             method: 'PUT',
             headers: {
