@@ -5,6 +5,7 @@ import Card from './Card';
 import Icon from './Icon';
 import { CLOSE_ICON } from '../../constants';
 import CameraCapture from './CameraCapture';
+import { compressImage } from '../../utils/imageCompressor';
 
 interface EditProfileModalProps {
     user: User;
@@ -19,27 +20,42 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, onClose }) =>
     const [country, setCountry] = useState(user.country || '');
     const [bio, setBio] = useState(user.bio || '');
 
+    const [isCompressing, setIsCompressing] = useState(false);
     const [showCamera, setShowCamera] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                setAvatar(e.target?.result as string);
-            };
-            reader.readAsDataURL(file);
+            setIsCompressing(true);
+            try {
+                const compressedDataUrl = await compressImage(file);
+                setAvatar(compressedDataUrl);
+            } catch (err) {
+                console.error("Error compressing avatar:", err);
+            } finally {
+                setIsCompressing(false);
+            }
         }
     };
 
-    const handleCameraCapture = (imageDataUrl: string) => {
-        setAvatar(imageDataUrl);
+    const handleCameraCapture = async (imageDataUrl: string) => {
         setShowCamera(false);
+        setIsCompressing(true);
+        try {
+            const blob = await (await fetch(imageDataUrl)).blob();
+            const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+            const compressedDataUrl = await compressImage(file);
+            setAvatar(compressedDataUrl);
+        } catch (err) {
+            console.error("Error compressing avatar from camera:", err);
+        } finally {
+            setIsCompressing(false);
+        }
     };
 
     const handleSave = () => {
-        if (!auth) return;
+        if (!auth || isCompressing) return;
         auth.updateUserProfile(user.id, {
             name,
             avatarUrl: avatar || '',
@@ -83,6 +99,8 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, onClose }) =>
                         </div>
                     </div>
                     
+                    {isCompressing && <p className="text-sm text-accent-primary text-center animate-pulse">Processing image...</p>}
+
                     <div>
                         <label htmlFor="name" className="text-sm font-semibold text-basetitan-text-secondary">Username</label>
                         <input
@@ -139,7 +157,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ user, onClose }) =>
 
                 <div className="mt-8 flex justify-end space-x-4">
                     <button onClick={onClose} className="bg-basetitan-dark hover:bg-basetitan-border text-white font-bold py-2 px-4 rounded-md">Cancel</button>
-                    <button onClick={handleSave} className="bg-accent-primary hover:bg-accent-primary-hover text-white font-bold py-2 px-4 rounded-md">Save Changes</button>
+                    <button onClick={handleSave} disabled={isCompressing} className="bg-accent-primary hover:bg-accent-primary-hover text-white font-bold py-2 px-4 rounded-md disabled:opacity-50">Save Changes</button>
                 </div>
             </Card>
         </div>
